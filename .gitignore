@@ -1,0 +1,50 @@
+.specstory/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Backend
+backend/.env
+backend/*.db
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Shell/tool config (sandbox artifacts)
+.bash_profile
+.bashrc
+.zshrc
+.zprofile
+.profile
+.gitconfig
+.gitmodules
+.ripgreprc
+.mcp.json
+
+# Claude Code sandbox git stubs
+HEAD
+config
+hooks
+objects
+refs
+
+# Claude Code
+.claude/

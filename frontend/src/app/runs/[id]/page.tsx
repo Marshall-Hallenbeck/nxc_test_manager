@@ -1,0 +1,364 @@
+"use client";
+
+import { useEffect, useState, useMemo } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { api } from "@/lib/api";
+import StatusBadge from "@/components/StatusBadge";
+import LogViewer from "@/components/LogViewer";
+import type { TestRunDetail, TestResult } from "@/types";
+
+type StatusFilter = "all" | "passed" | "failed" | "skipped" | "error";
+
+export default function TestRunDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const id = Number(params.id);
+  const [run, setRun] = useState<TestRunDetail | null>(null);
+  const [error, setError] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [reviewRequesting, setReviewRequesting] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+  function toggleSection(section: string) {
+    setCollapsedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  }
+
+  // Handle hash navigation on load and hash change
+  useEffect(() => {
+    function scrollToHash() {
+      const hash = window.location.hash.slice(1);
+      if (!hash) return;
+      // Ensure the target section is expanded
+      setCollapsedSections((prev) => ({ ...prev, [hash]: false }));
+      // Allow DOM to update before scrolling
+      setTimeout(() => {
+        document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    }
+    scrollToHash();
+    window.addEventListener("hashchange", scrollToHash);
+    return () => window.removeEventListener("hashchange", scrollToHash);
+  }, []);
+
+  async function loadRun() {
+    try {
+      const data = (await api.getTestRun(id)) as TestRunDetail;
+      setRun(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load");
+    }
+  }
+
+  const [reviewTriggered, setReviewTriggered] = useState(false);
+
+  useEffect(() => {
+    loadRun();
+    const interval = setInterval(loadRun, 5000);
+    return () => clearInterval(interval);
+  }, [id]);
+
+  // Auto-trigger AI review when run completes with ai_review_enabled
+  // Only if there are actual test results to review (skip infrastructure failures)
+  useEffect(() => {
+    if (
+      run &&
+      run.ai_review_enabled &&
+      !reviewTriggered &&
+      !run.ai_review_status &&
+      (run.status === "completed" || run.status === "failed") &&
+      run.total_tests > 0
+    ) {
+      setReviewTriggered(true);
+      api.reviewTestRun(id).catch(() => {});
+    }
+  }, [run?.status, run?.ai_review_enabled, run?.ai_review_status, run?.total_tests]);
+
+  async function handleCancel() {
+    if (!confirm("Cancel this test run?")) return;
+    try {
+      await api.cancelTestRun(id);
+      loadRun();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function extractCommand(testName: string): string {
+    // Strip timestamp prefix like "[15:07:31] " and any leading whitespace
+    return testName.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, "").trim();
+  }
+
+  function handleCopy(e: React.MouseEvent, resultId: number, testName: string) {
+    e.stopPropagation(); // Don't toggle expand
+    const cmd = extractCommand(testName);
+    navigator.clipboard.writeText(cmd);
+    setCopiedId(resultId);
+    setTimeout(() => setCopiedId(null), 1500);
+  }
+
+  async function handleReview() {
+    setReviewRequesting(true);
+    try {
+      await api.reviewTestRun(id);
+      loadRun();
+    } catch {
+      /* loadRun will pick up the error state */
+    } finally {
+      setReviewRequesting(false);
+    }
+  }
+
+  function handleRerun() {
+    if (!run) return;
+    const params = new URLSearchParams();
+    params.set("pr_number", String(run.pr_number));
+    if (run.target_hosts) params.set("target_hosts", run.target_hosts);
+    if (run.target_username) params.set("target_username", run.target_username);
+    if (run.target_password) params.set("target_password", run.target_password);
+    if (run.protocols) params.set("protocols", run.protocols);
+    if (run.kerberos) params.set("kerberos", "true");
+    if (run.verbose) params.set("verbose", "true");
+    if (run.show_errors) params.set("show_errors", "true");
+    if (run.ai_review_enabled) params.set("ai_review", "true");
+    if (run.line_nums) params.set("line_nums", run.line_nums);
+    if (run.not_tested) params.set("not_tested", "true");
+    if (run.dns_server) params.set("dns_server", run.dns_server);
+    router.push(`/?${params.toString()}`);
+  }
+
+  if (error) return <div className="text-red-500">{error}</div>;
+  if (!run) return <div className="text-[var(--muted)]">Loading...</div>;
+
+  const isActive = run.status === "queued" || run.status === "running";
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-3xl font-bold">
+            PR #{run.pr_number}
+            {run.pr_title && (
+              <span className="text-[var(--muted)] text-xl ml-3">{run.pr_title}</span>
+            )}
+          </h1>
+          <div className="flex items-center gap-3 mt-2 text-sm text-[var(--muted)]">
+            <StatusBadge status={run.status} />
+            {run.commit_sha && <span>SHA: {run.commit_sha.slice(0, 7)}</span>}
+            <span>Targets: {run.target_hosts}</span>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {isActive && (
+            <button
+              onClick={handleCancel}
+              className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600"
+            >
+              Cancel Test
+            </button>
+          )}
+          {!isActive && (
+            <>
+              <button
+                onClick={handleReview}
+                disabled={reviewRequesting || run.ai_review_status === "running"}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50"
+              >
+                {run.ai_review_status === "running" ? "Reviewing..." : "Review with Claude"}
+              </button>
+              <button
+                onClick={handleRerun}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              >
+                Re-run
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-4">
+          <div className="text-sm text-[var(--muted)]">Created</div>
+          <div>{new Date(run.created_at).toLocaleString()}</div>
+        </div>
+        <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-4">
+          <div className="text-sm text-[var(--muted)]">Started</div>
+          <div>{run.started_at ? new Date(run.started_at).toLocaleString() : "-"}</div>
+        </div>
+        <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-4">
+          <div className="text-sm text-[var(--muted)]">Completed</div>
+          <div>{run.completed_at ? new Date(run.completed_at).toLocaleString() : "-"}</div>
+        </div>
+      </div>
+
+      {run.total_tests > 0 && (
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="bg-green-900/30 border border-green-800 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-green-400">{run.passed_tests}</div>
+            <div className="text-sm text-green-500">Passed</div>
+          </div>
+          <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-red-400">{run.failed_tests}</div>
+            <div className="text-sm text-red-500">Failed</div>
+          </div>
+          <div className="bg-blue-900/30 border border-blue-800 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-blue-400">{run.total_tests}</div>
+            <div className="text-sm text-blue-500">Total</div>
+          </div>
+        </div>
+      )}
+
+      {run.results.length > 0 && (
+        <div className="mb-6" id="results">
+          <div className="flex items-center justify-between mb-3 group">
+            <h2
+              onClick={() => toggleSection("results")}
+              className="text-xl font-semibold flex items-center gap-2 cursor-pointer select-none"
+            >
+              <span className={`text-sm text-[var(--muted)] transition-transform ${collapsedSections.results ? "-rotate-90" : ""}`}>▾</span>
+              Test Results
+              <a href="#results" onClick={(e) => e.stopPropagation()} className="text-[var(--muted)] opacity-0 group-hover:opacity-100 text-sm transition-opacity">#</a>
+            </h2>
+            {!collapsedSections.results && (
+              <div className="flex gap-1">
+                {(["all", "passed", "failed", "skipped", "error"] as StatusFilter[]).map((f) => {
+                  const count = f === "all"
+                    ? run.results.length
+                    : run.results.filter((r) => r.status === f).length;
+                  if (f !== "all" && count === 0) return null;
+                  return (
+                    <button
+                      key={f}
+                      onClick={() => setStatusFilter(f)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                        statusFilter === f
+                          ? f === "passed" ? "bg-green-500/30 text-green-300 border border-green-500/50"
+                            : f === "failed" ? "bg-red-500/30 text-red-300 border border-red-500/50"
+                            : f === "error" ? "bg-red-500/30 text-red-300 border border-red-500/50"
+                            : f === "skipped" ? "bg-gray-500/30 text-gray-300 border border-gray-500/50"
+                            : "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/50"
+                          : "bg-[var(--card-bg)] text-[var(--muted)] border border-[var(--card-border)] hover:text-[var(--foreground)]"
+                      }`}
+                    >
+                      {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {!collapsedSections.results && (
+            <div className="space-y-2">
+              {run.results
+                .filter((r) => statusFilter === "all" || r.status === statusFilter)
+                .map((result) => (
+                <div key={result.id} className="border border-[var(--card-border)] bg-[var(--card-bg)] rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setExpandedId(expandedId === result.id ? null : result.id)}
+                    className="w-full p-3 flex items-center justify-between text-left hover:bg-white/5 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className={`text-lg flex-shrink-0 ${result.status === "passed" ? "text-green-400" : result.status === "failed" ? "text-red-400" : "text-gray-400"}`}>
+                        {result.status === "passed" ? "✔" : result.status === "failed" ? "✘" : "○"}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{result.test_name}</div>
+                        <div className="text-xs text-[var(--muted)] flex gap-3">
+                          {result.target_host && <span>Target: {result.target_host}</span>}
+                          {result.duration != null && <span>{result.duration.toFixed(1)}s</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={(e) => handleCopy(e, result.id, result.test_name)}
+                        className="px-2 py-1 rounded text-xs text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-white/10 transition-colors"
+                        title="Copy command"
+                      >
+                        {copiedId === result.id ? "Copied!" : "Copy"}
+                      </button>
+                      <StatusBadge status={result.status} />
+                      <span className={`text-[var(--muted)] text-sm transition-transform ${expandedId === result.id ? "rotate-180" : ""}`}>
+                        ▾
+                      </span>
+                    </div>
+                  </button>
+                  {expandedId === result.id && (
+                    <div className="border-t border-[var(--card-border)] p-3">
+                      {result.error_message && (
+                        <div className="mb-3 p-2 bg-red-900/20 border border-red-800 rounded text-sm text-red-300">
+                          {result.error_message}
+                        </div>
+                      )}
+                      {result.output ? (
+                        <pre className="text-xs text-[var(--muted)] bg-black/40 rounded p-3 overflow-x-auto max-h-80 overflow-y-auto whitespace-pre-wrap break-words">
+                          {result.output}
+                        </pre>
+                      ) : (
+                        <div className="text-sm text-[var(--muted)]">No output captured.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {(run.ai_review_status === "running" || run.ai_summary) && (
+        <div className="mb-6" id="ai-review">
+          <div className="flex items-center mb-3 group">
+            <h2
+              onClick={() => toggleSection("ai-review")}
+              className="text-xl font-semibold flex items-center gap-2 cursor-pointer select-none"
+            >
+              <span className={`text-sm text-[var(--muted)] transition-transform ${collapsedSections["ai-review"] ? "-rotate-90" : ""}`}>▾</span>
+              AI Review
+              <a href="#ai-review" onClick={(e) => e.stopPropagation()} className="text-[var(--muted)] opacity-0 group-hover:opacity-100 text-sm transition-opacity">#</a>
+            </h2>
+          </div>
+          {!collapsedSections["ai-review"] && (
+            <div className="bg-[var(--card-bg)] border border-purple-800/50 rounded-lg p-4">
+              {run.ai_review_status === "running" && !run.ai_summary && (
+                <div className="flex items-center gap-3 text-[var(--muted)]">
+                  <div className="animate-spin h-4 w-4 border-2 border-purple-400 border-t-transparent rounded-full" />
+                  Claude is reviewing this PR and test results...
+                </div>
+              )}
+              {run.ai_summary && (
+                <div className={`prose prose-invert prose-sm max-w-none ${run.ai_review_status === "failed" ? "text-red-300" : ""}`}>
+                  {run.ai_summary.split("\n").map((line, i) => {
+                    if (line.startsWith("# ")) return <h1 key={i} className="text-lg font-bold mt-3 mb-1">{line.slice(2)}</h1>;
+                    if (line.startsWith("## ")) return <h2 key={i} className="text-base font-semibold mt-3 mb-1">{line.slice(3)}</h2>;
+                    if (line.startsWith("### ")) return <h3 key={i} className="text-sm font-semibold mt-2 mb-1">{line.slice(4)}</h3>;
+                    if (line.startsWith("**") && line.endsWith("**")) return <p key={i} className="font-semibold mt-2">{line.slice(2, -2)}</p>;
+                    if (line.startsWith("- ")) return <li key={i} className="ml-4 list-disc">{line.slice(2)}</li>;
+                    if (line.trim() === "") return <br key={i} />;
+                    return <p key={i} className="my-1">{line}</p>;
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div id="logs">
+        <div className="flex items-center mb-3 group">
+          <h2
+            onClick={() => toggleSection("logs")}
+            className="text-xl font-semibold flex items-center gap-2 cursor-pointer select-none"
+          >
+            <span className={`text-sm text-[var(--muted)] transition-transform ${collapsedSections.logs ? "-rotate-90" : ""}`}>▾</span>
+            {isActive ? "Live Logs" : "Logs"}
+            <a href="#logs" onClick={(e) => e.stopPropagation()} className="text-[var(--muted)] opacity-0 group-hover:opacity-100 text-sm transition-opacity">#</a>
+          </h2>
+        </div>
+        {!collapsedSections.logs && <LogViewer testRunId={id} />}
+      </div>
+    </div>
+  );
+}

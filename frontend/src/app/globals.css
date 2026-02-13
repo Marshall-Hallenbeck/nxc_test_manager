@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --card-bg: #f9fafb;
+  --card-border: #e5e7eb;
+  --input-bg: #ffffff;
+  --input-border: #d1d5db;
+  --muted: #6b7280;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --card-bg: #1a1a1a;
+  --card-border: #2a2a2a;
+  --input-bg: #1a1a1a;
+  --input-border: #3a3a3a;
+  --muted: #9ca3af;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Form inputs */
+input[type="text"],
+input[type="number"],
+input[type="password"],
+textarea,
+select {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--foreground);
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* Scrollbar styling for dark mode */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #3a3a3a;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #4a4a4a;
+}
+
+/* Resizable elements */
+.resize-y::-webkit-resizer {
+  background: linear-gradient(135deg, transparent 50%, #4a4a4a 50%, #4a4a4a 60%, transparent 60%),
+              linear-gradient(135deg, transparent 50%, #4a4a4a 50%, #4a4a4a 60%, transparent 60%);
+  background-size: 6px 6px;
+  background-position: bottom right, bottom 4px right 4px;
+  background-repeat: no-repeat;
+}

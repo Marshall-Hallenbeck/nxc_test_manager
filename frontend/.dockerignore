@@ -1,0 +1,5 @@
+node_modules
+.next
+.env*
+src/__tests__
+vitest.config.ts
