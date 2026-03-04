@@ -140,6 +140,9 @@ def review_test_run(test_run_id: int, db: Session = Depends(get_db)):
 
     Runs in a background thread. Poll GET /{id} for ai_review_status updates.
     """
+    if not ai_review.CLAUDE_AVAILABLE:
+        raise HTTPException(status_code=503, detail=ai_review.CLAUDE_UNAVAILABLE_REASON or "Claude CLI unavailable")
+
     test_run = db.get(TestRun, test_run_id)
     if not test_run:
         raise HTTPException(status_code=404, detail="Test run not found")
@@ -172,7 +175,7 @@ def review_test_run(test_run_id: int, db: Session = Depends(get_db)):
     pr_number = test_run.pr_number
     pr_title = test_run.pr_title
 
-    def _run_review():
+    def run_review_background():
         review_db = SessionLocal()
         try:
             review_text = ai_review.generate_review(
@@ -196,7 +199,7 @@ def review_test_run(test_run_id: int, db: Session = Depends(get_db)):
         finally:
             review_db.close()
 
-    thread = threading.Thread(target=_run_review, daemon=True)
+    thread = threading.Thread(target=run_review_background, daemon=True)
     thread.start()
 
     return {"status": "running"}

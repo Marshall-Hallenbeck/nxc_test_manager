@@ -136,6 +136,7 @@ RUN cp poetry.lock /poetry.lock.base
                 tag=pr_image,
                 rm=True,
                 pull=False,
+                network_mode="host",
             )
 
             # Log build output if callback provided
@@ -274,6 +275,7 @@ def run_test_container(
         for chunk in container.logs(stream=True, follow=True):
             # Decode and strip ANSI escape sequences
             text = chunk.decode("utf-8", errors="replace")
+            text = text.replace("\x00", "")
             text = ANSI_ESCAPE.sub("", text)
             buffer += text
             # Process complete lines from buffer

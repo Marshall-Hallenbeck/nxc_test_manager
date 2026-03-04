@@ -1,5 +1,13 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
+type HealthResponse = {
+  status: string;
+  claude_available: boolean;
+  claude_unavailable_reason: string;
+};
+
+let healthPromise: Promise<HealthResponse> | null = null;
+
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -69,5 +77,12 @@ export const api = {
     return fetchAPI<{ number: number; title: string; user: string; state: string }[]>(
       `/api/runs/prs?q=${encodeURIComponent(query)}`
     );
+  },
+
+  getHealth() {
+    if (!healthPromise) {
+      healthPromise = fetchAPI<HealthResponse>("/health");
+    }
+    return healthPromise;
   },
 };

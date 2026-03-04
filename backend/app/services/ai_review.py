@@ -1,5 +1,6 @@
 """AI review service using Claude CLI."""
 import glob
+import json
 import logging
 import os
 import shutil
@@ -12,8 +13,12 @@ logger = logging.getLogger(__name__)
 MAX_DIFF_CHARS = 80000
 MAX_OUTPUT_PER_TEST = 3000
 
+# Set by check_claude_available() at startup
+CLAUDE_AVAILABLE = False
+CLAUDE_UNAVAILABLE_REASON = ""
 
-def _find_claude_cli() -> str:
+
+def find_claude_cli() -> str:
     """Find the claude CLI binary, checking PATH and Docker mount location."""
     # Check PATH first (host development)
     found = shutil.which("claude")
@@ -28,10 +33,71 @@ def _find_claude_cli() -> str:
     return "claude"
 
 
-CLAUDE_CLI = _find_claude_cli()
+CLAUDE_CLI = find_claude_cli()
 
 
-def _build_prompt(
+def build_env() -> dict:
+    """Build a clean environment for Claude CLI subprocesses."""
+    env = os.environ.copy()
+    # Ensure HOME is set for Docker containers where .claude is mounted to /root
+    if os.path.exists("/root/.claude"):
+        env["HOME"] = "/root"
+    # Remove CLAUDECODE to avoid "nested session" detection when the backend
+    # is launched from within a Claude Code terminal
+    env.pop("CLAUDECODE", None)
+    return env
+
+
+def check_claude_available() -> None:
+    """Probe Claude CLI auth status at startup. Sets CLAUDE_AVAILABLE and CLAUDE_UNAVAILABLE_REASON."""
+    global CLAUDE_AVAILABLE, CLAUDE_UNAVAILABLE_REASON
+
+    env = build_env()
+
+    try:
+        result = subprocess.run(
+            [CLAUDE_CLI, "auth", "status", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=env,
+        )
+    except FileNotFoundError:
+        CLAUDE_AVAILABLE = False
+        CLAUDE_UNAVAILABLE_REASON = "Claude CLI not installed"
+        logger.warning("Claude CLI not found — AI review disabled")
+        return
+    except subprocess.TimeoutExpired:
+        CLAUDE_AVAILABLE = False
+        CLAUDE_UNAVAILABLE_REASON = "Claude CLI timed out during auth check"
+        logger.warning("Claude CLI auth check timed out — AI review disabled")
+        return
+
+    if result.returncode != 0:
+        CLAUDE_AVAILABLE = False
+        CLAUDE_UNAVAILABLE_REASON = f"Claude CLI error (exit {result.returncode})"
+        logger.warning(f"Claude CLI auth check failed (exit {result.returncode}) — AI review disabled")
+        return
+
+    try:
+        data = json.loads(result.stdout)
+    except (json.JSONDecodeError, ValueError):
+        CLAUDE_AVAILABLE = False
+        CLAUDE_UNAVAILABLE_REASON = "Claude CLI returned invalid JSON"
+        logger.warning("Claude CLI auth check returned invalid JSON — AI review disabled")
+        return
+
+    if data.get("loggedIn"):
+        CLAUDE_AVAILABLE = True
+        CLAUDE_UNAVAILABLE_REASON = ""
+        logger.info("Claude CLI authenticated — AI review enabled")
+    else:
+        CLAUDE_AVAILABLE = False
+        CLAUDE_UNAVAILABLE_REASON = "Claude CLI not authenticated"
+        logger.warning("Claude CLI not authenticated — AI review disabled")
+
+
+def build_prompt(
     pr_number: int,
     pr_title: str | None,
     pr_body: str,
@@ -88,7 +154,8 @@ Please provide a concise review covering:
 1. **PR Summary**: What does this PR change? (2-3 sentences)
 2. **Test Analysis**: Analyze the test results. If there are failures, are they related to the PR changes or pre-existing issues?
 3. **Risk Assessment**: Any concerns about the changes? (security, compatibility, edge cases)
-4. **Verdict**: Overall assessment — does this PR look safe to merge based on the test results?
+4. **AI-Generated Code Assessment**: Analyze the diff for signs of AI-generated code (e.g. overly verbose comments, boilerplate patterns, unnatural naming, excessive docstrings, hallucinated imports, generic error handling, suspiciously uniform style). State your conclusion (likely AI-generated, likely human-written, or mixed/uncertain) and explain the specific signals that led to it.
+5. **Verdict**: Overall assessment — does this PR look safe to merge based on the test results?
 
 Keep the review concise and actionable. Use markdown formatting."""
 
@@ -114,19 +181,12 @@ def generate_review(
     if not diff or not diff.strip():
         raise RuntimeError("Cannot generate review: PR diff is empty")
 
-    try:
-        pr_body = github.get_pr_body(pr_number)
-    except Exception as e:
-        logger.warning(f"Failed to fetch PR body: {e}")
-        pr_body = ""
+    pr_body = github.get_pr_body(pr_number)
 
-    prompt = _build_prompt(pr_number, pr_title, pr_body, diff, results, summary)
+    prompt = build_prompt(pr_number, pr_title, pr_body, diff, results, summary)
 
     # Call claude CLI
-    env = os.environ.copy()
-    # Ensure HOME is set for Docker containers where .claude is mounted to /root
-    if os.path.exists("/root/.claude"):
-        env["HOME"] = "/root"
+    env = build_env()
     try:
         result = subprocess.run(
             [CLAUDE_CLI, "-p", "--output-format", "text"],

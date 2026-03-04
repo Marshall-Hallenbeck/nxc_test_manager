@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { useClaudeAvailability } from "@/lib/claude";
 import StatusBadge from "@/components/StatusBadge";
 import LogViewer from "@/components/LogViewer";
 import type { TestRunDetail, TestResult } from "@/types";
@@ -19,6 +20,7 @@ export default function TestRunDetailPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [reviewRequesting, setReviewRequesting] = useState(false);
+  const { claudeAvailable, claudeUnavailableReason } = useClaudeAvailability();
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   function toggleSection(section: string) {
@@ -61,9 +63,11 @@ export default function TestRunDetailPage() {
 
   // Auto-trigger AI review when run completes with ai_review_enabled
   // Only if there are actual test results to review (skip infrastructure failures)
+  // Skip if Claude CLI is unavailable
   useEffect(() => {
     if (
       run &&
+      claudeAvailable &&
       run.ai_review_enabled &&
       !reviewTriggered &&
       !run.ai_review_status &&
@@ -71,9 +75,9 @@ export default function TestRunDetailPage() {
       run.total_tests > 0
     ) {
       setReviewTriggered(true);
-      api.reviewTestRun(id).catch(() => {});
+      api.reviewTestRun(id);
     }
-  }, [run?.status, run?.ai_review_enabled, run?.ai_review_status, run?.total_tests]);
+  }, [run?.status, run?.ai_review_enabled, run?.ai_review_status, run?.total_tests, claudeAvailable]);
 
   async function handleCancel() {
     if (!confirm("Cancel this test run?")) return;
@@ -162,10 +166,11 @@ export default function TestRunDetailPage() {
             <>
               <button
                 onClick={handleReview}
-                disabled={reviewRequesting || run.ai_review_status === "running"}
+                disabled={!claudeAvailable || reviewRequesting || run.ai_review_status === "running"}
+                title={!claudeAvailable ? claudeUnavailableReason : undefined}
                 className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50"
               >
-                {run.ai_review_status === "running" ? "Reviewing..." : "Review with Claude"}
+                {!claudeAvailable ? "Review Unavailable" : run.ai_review_status === "running" ? "Reviewing..." : "Review with Claude"}
               </button>
               <button
                 onClick={handleRerun}

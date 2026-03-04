@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     database_url: str = "postgresql://postgres:postgres@localhost:5438/netexec_tests"
     redis_url: str = "redis://localhost:6381/0"
-    github_token: str | None = None
+    github_token: str
 
     # Default test targets
     default_target_hosts: str = ""

@@ -64,7 +64,7 @@ def parse_test_output(output: str) -> dict:
         sections[-1] = (sections[-1][0], len(lines))
 
     # Build a lookup: for each line index that has a marker, find its section text
-    def _section_for_line(line_idx: int) -> str:
+    def section_for_line(line_idx: int) -> str:
         for start, end in sections:
             if start <= line_idx < end:
                 return "\n".join(lines[start:end]).strip()
@@ -88,7 +88,7 @@ def parse_test_output(output: str) -> dict:
                 "test_name": cmd,
                 "status": TestStatus.PASSED if has_pass else TestStatus.FAILED,
                 "duration": None,
-                "output": _section_for_line(i),
+                "output": section_for_line(i),
             })
 
     # Also parse the summary line for aggregate counts
@@ -148,16 +148,17 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
     db.commit()
 
     try:
-        # Fetch PR details from GitHub (non-fatal if it fails)
         pr_info = github.get_pr_details(test_run.pr_number)
         test_run.pr_title = pr_info["title"]
         test_run.commit_sha = pr_info["head_sha"]
         db.commit()
     except Exception as e:
-        logger.warning(f"Failed to fetch PR details (continuing anyway): {e}")
-        _add_log(db, test_run_id, f"Warning: Could not fetch PR details from GitHub API: {e}", "WARNING")
-        test_run.pr_title = f"PR #{test_run.pr_number}"
+        logger.error(f"Failed to fetch PR details for PR #{test_run.pr_number}: {e}")
+        add_log(db, test_run_id, f"FATAL: Could not fetch PR details from GitHub API: {e}", "ERROR")
+        test_run.status = TestRunStatus.FAILED
+        test_run.completed_at = datetime.now(UTC)
         db.commit()
+        return
 
     target_hosts = parse_target_hosts(test_run.target_hosts)
     username = test_run.target_username or settings.default_target_username
@@ -165,14 +166,14 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
 
     # Resolve the Docker image before running any tests — if the image build
     # fails (e.g. dependencies can't be installed), abort the entire run.
-    def _log(line: str):
-        _add_log(db, test_run_id, line)
+    def log(line: str):
+        add_log(db, test_run_id, line)
 
     try:
-        image_name = docker_manager.get_image_for_pr(test_run.pr_number, log_callback=_log)
+        image_name = docker_manager.get_image_for_pr(test_run.pr_number, log_callback=log)
     except Exception as e:
         logger.error(f"Failed to prepare Docker image for PR #{test_run.pr_number}: {e}")
-        _add_log(db, test_run_id, f"FATAL: {e}", "ERROR")
+        add_log(db, test_run_id, f"FATAL: {e}", "ERROR")
         test_run.status = TestRunStatus.FAILED
         test_run.completed_at = datetime.now(UTC)
         db.commit()
@@ -187,15 +188,15 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
         # Check for cancellation
         db.refresh(test_run)
         if test_run.status == TestRunStatus.CANCELLED:
-            _add_log(db, test_run_id, "Test cancelled by user", "WARNING")
+            add_log(db, test_run_id, "Test cancelled by user", "WARNING")
             return
 
-        _add_log(db, test_run_id, f"=== Testing against {host} ===")
+        add_log(db, test_run_id, f"=== Testing against {host} ===")
         output_lines = []
 
         def log_callback(line: str, _lines=output_lines):
             _lines.append(line)
-            _add_log(db, test_run_id, line)
+            add_log(db, test_run_id, line)
 
         try:
             exit_code, container_id = docker_manager.run_test_container(
@@ -277,7 +278,8 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
 
         except Exception as e:
             logger.error(f"Error testing against {host}: {e}")
-            _add_log(db, test_run_id, f"Error testing against {host}: {e}", "ERROR")
+            db.rollback()
+            add_log(db, test_run_id, f"Error testing against {host}: {e}", "ERROR")
             total_failed += 1
             total_tests += 1
 
@@ -289,10 +291,10 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
     test_run.completed_at = datetime.now(UTC)
     db.commit()
 
-    _add_log(db, test_run_id, f"=== Completed: {total_passed}/{total_tests} passed ===")
+    add_log(db, test_run_id, f"=== Completed: {total_passed}/{total_tests} passed ===")
 
 
-def _add_log(db: Session, test_run_id: int, line: str, level: str = "INFO") -> None:
-    log = TestLog(test_run_id=test_run_id, log_line=line, level=level)
+def add_log(db: Session, test_run_id: int, line: str, level: str = "INFO") -> None:
+    log = TestLog(test_run_id=test_run_id, log_line=line.replace("\x00", ""), level=level)
     db.add(log)
     db.commit()

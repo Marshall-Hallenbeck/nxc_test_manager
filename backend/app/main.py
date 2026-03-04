@@ -4,11 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db
 from .api import test_runs, websocket, webhooks
+from .services import ai_review
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    ai_review.check_claude_available()
     yield
 
 
@@ -34,7 +36,11 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "claude_available": ai_review.CLAUDE_AVAILABLE,
+        "claude_unavailable_reason": ai_review.CLAUDE_UNAVAILABLE_REASON,
+    }
 
 
 app.include_router(test_runs.router, prefix="/api/runs", tags=["runs"])

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
+import { useClaudeAvailability } from "@/lib/claude";
 
 const PROTOCOLS = ["smb", "wmi", "ldap", "winrm", "mssql", "rdp", "ssh", "ftp", "nfs"];
 
@@ -38,6 +39,7 @@ function SubmitForm() {
   const [verbose, setVerbose] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [aiReview, setAiReview] = useState(false);
+  const { claudeAvailable, claudeUnavailableReason } = useClaudeAvailability();
   const [lineNums, setLineNums] = useState("");
   const [notTested, setNotTested] = useState(false);
   const [dnsServer, setDnsServer] = useState("");
@@ -152,7 +154,7 @@ function SubmitForm() {
       if (kerberos) data.kerberos = true;
       if (verbose) data.verbose = true;
       if (showErrors) data.show_errors = true;
-      if (aiReview) data.ai_review = true;
+      if (aiReview && claudeAvailable) data.ai_review = true;
       if (lineNums) data.line_nums = lineNums;
       if (notTested) data.not_tested = true;
       if (dnsServer) data.dns_server = dnsServer;
@@ -389,10 +391,11 @@ function SubmitForm() {
             />
             Show not-tested commands
           </label>
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-sm" title={!claudeAvailable ? claudeUnavailableReason : undefined}>
             <input
               type="checkbox"
               checked={aiReview}
+              disabled={!claudeAvailable}
               onChange={(e) => {
                 const checked = e.target.checked;
                 setAiReview(checked);
@@ -403,7 +406,10 @@ function SubmitForm() {
               }}
               className="rounded"
             />
-            AI review (Claude analyzes PR diff + test results on completion)
+            <span className={!claudeAvailable ? "text-[var(--muted)]" : ""}>
+              AI review (Claude analyzes PR diff + test results on completion)
+              {!claudeAvailable && <span className="ml-1 text-yellow-400/70">(unavailable)</span>}
+            </span>
           </label>
           {aiReview && (!verbose || !showErrors) && (
             <p className="text-xs text-yellow-400 ml-6">
