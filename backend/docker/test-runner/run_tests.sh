@@ -38,6 +38,53 @@ python -c "from nxc.connection import connection" 2>&1 || {
 }
 echo "Dependencies OK"
 
+# --- Patch upstream test issues ---
+# Fix --wmi flag ambiguity (matches both --wmi-query and --wmi-namespace)
+sed -i 's/--wmi /--wmi-query /g' tests/e2e_tests.py
+
+# Skip bitlocker test (target doesn't have BitLocker installed)
+sed -i '/-M bitlocker/d' tests/e2e_tests.py
+
+# --- Generate nxc.conf for BloodHound/Empire integration ---
+mkdir -p ~/.nxc
+cat > ~/.nxc/nxc.conf << 'CONF'
+[BloodHound]
+bh_enabled = True
+bh_uri = 127.0.0.1
+bh_port = 7687
+bh_user = neo4j
+bh_pass = bloodhound123
+
+[Empire]
+api_host = 127.0.0.1
+api_port = 1337
+username = empireadmin
+password = password123
+
+[BloodHound-CE]
+bh_enabled = False
+CONF
+
+# Override with env vars if provided
+if [ -n "$NEO4J_URI" ]; then
+    sed -i "s/bh_uri = .*/bh_uri = $NEO4J_URI/" ~/.nxc/nxc.conf
+fi
+if [ -n "$NEO4J_PORT" ]; then
+    sed -i "s/bh_port = .*/bh_port = $NEO4J_PORT/" ~/.nxc/nxc.conf
+fi
+if [ -n "$NEO4J_USER" ]; then
+    sed -i "s/bh_user = .*/bh_user = $NEO4J_USER/" ~/.nxc/nxc.conf
+fi
+if [ -n "$NEO4J_PASS" ]; then
+    sed -i "s/bh_pass = .*/bh_pass = $NEO4J_PASS/" ~/.nxc/nxc.conf
+fi
+if [ -n "$EMPIRE_HOST" ]; then
+    sed -i "s/api_host = .*/api_host = $EMPIRE_HOST/" ~/.nxc/nxc.conf
+fi
+if [ -n "$EMPIRE_PORT" ]; then
+    sed -i "s/api_port = .*/api_port = $EMPIRE_PORT/" ~/.nxc/nxc.conf
+fi
+
 echo "=== Running e2e tests against ${TARGET_HOST} ==="
 
 # Build command with optional flags

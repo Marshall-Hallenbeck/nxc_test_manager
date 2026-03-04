@@ -249,6 +249,14 @@ def run_test_container(
         "NOT_TESTED": "1" if not_tested else "",
         "DNS_SERVER": dns_server or "",
         "CONTAINER_TIMEOUT": str(settings.container_timeout),
+        # Neo4j / BloodHound connection details
+        "NEO4J_URI": "127.0.0.1",
+        "NEO4J_PORT": "7687",
+        "NEO4J_USER": "neo4j",
+        "NEO4J_PASS": "bloodhound123",
+        # Empire connection details
+        "EMPIRE_HOST": "127.0.0.1",
+        "EMPIRE_PORT": "1337",
         # Disable rich library's path display and ensure proper output
         "PYTHONUNBUFFERED": "1",
         "COLUMNS": "300",
