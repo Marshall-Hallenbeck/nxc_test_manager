@@ -29,6 +29,27 @@ services:
       timeout: 5s
       retries: 5
 
+  empire:
+    image: bcsecurity/empire:latest
+    container_name: netexec-empire
+    ports:
+      - "1337:1337"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:1337/"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  empire-init:
+    image: curlimages/curl:latest
+    container_name: netexec-empire-init
+    depends_on:
+      empire:
+        condition: service_healthy
+    volumes:
+      - ./docker/empire-init/init-listener.sh:/init-listener.sh:ro
+    entrypoint: ["sh", "/init-listener.sh", "netexec-empire", "1337"]
+
 volumes:
   postgres_data:
   redis_data:

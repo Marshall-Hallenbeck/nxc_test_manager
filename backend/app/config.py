@@ -1,4 +1,5 @@
 """Configuration management for the NetExec Test Manager."""
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,17 +27,19 @@ class Settings(BaseSettings):
     container_memory_limit: str = "2g"
     celery_workers: int = 3
 
+    # Empire C2 (for empire_exec e2e tests)
+    empire_host: str = "127.0.0.1"
+    empire_port: int = 1337
+    empire_username: str = "empireadmin"
+    empire_password: str = "password123"
+
     # GitHub Webhooks (disabled by default)
     webhook_enabled: bool = False
     webhook_secret: str = ""
     webhook_auto_test_events: str = "opened,synchronize"
     webhook_repo_filter: str = "Pennyw0rth/NetExec"
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
 
 
 settings = Settings()

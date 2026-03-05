@@ -52,6 +52,16 @@ services:
       timeout: 5s
       retries: 15
 
+  empire-init:
+    image: curlimages/curl:latest
+    container_name: netexec-empire-init
+    depends_on:
+      empire:
+        condition: service_healthy
+    volumes:
+      - ./backend/docker/empire-init/init-listener.sh:/init-listener.sh:ro
+    entrypoint: ["sh", "/init-listener.sh", "netexec-empire", "1337"]
+
   backend:
     build:
       context: ./backend
