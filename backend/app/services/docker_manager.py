@@ -46,7 +46,8 @@ def get_base_poetry_lock_hash() -> str:
         # Run a quick container to cat the base poetry.lock
         result = client.containers.run(
             DOCKER_IMAGE_NAME,
-            command="cat /poetry.lock.base",
+            command="/poetry.lock.base",
+            entrypoint="cat",
             remove=True,
             network_mode="none",
         )
