@@ -1,10 +1,13 @@
 """Pydantic schemas for test runs."""
-from pydantic import BaseModel, ConfigDict
+import re
+from pydantic import BaseModel, ConfigDict, model_validator
 from datetime import datetime
 
 
 class TestRunCreate(BaseModel):
-    pr_number: int
+    pr_number: int | None = None
+    branch: str | None = None
+    repo: str | None = None
     target_hosts: str | None = None
     target_username: str | None = None
     target_password: str | None = None
@@ -17,6 +20,18 @@ class TestRunCreate(BaseModel):
     line_nums: str | None = None  # Comma-separated line numbers/ranges e.g. "5,10-15,20"
     not_tested: bool = False  # Display commands that didn't get tested
     dns_server: str | None = None  # DNS server IP/hostname
+
+    @model_validator(mode="after")
+    def validate_source(self):
+        if self.pr_number is not None and self.branch is not None:
+            raise ValueError("Specify either pr_number or branch, not both")
+        if self.pr_number is None and self.branch is None:
+            raise ValueError("Either pr_number or branch is required")
+        if self.branch is not None and not re.match(r"^[A-Za-z0-9/_.\-]+$", self.branch):
+            raise ValueError("branch contains invalid characters")
+        if self.repo is not None and not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", self.repo):
+            raise ValueError("repo must be in 'owner/name' format")
+        return self
 
 
 class TestResultOut(BaseModel):
@@ -44,7 +59,9 @@ class TestRunOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    pr_number: int
+    pr_number: int | None
+    branch: str | None = None
+    repo: str | None = None
     pr_title: str | None
     commit_sha: str | None
     target_hosts: str

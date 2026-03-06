@@ -75,7 +75,7 @@ export default function RunsPage() {
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-[var(--card-border)] text-left text-sm text-[var(--muted)]">
-                <th className="py-3 pr-4">PR</th>
+                <th className="py-3 pr-4">Source</th>
                 <th className="py-3 pr-4">Status</th>
                 <th className="py-3 pr-4">Targets</th>
                 <th className="py-3 pr-4">Results</th>
@@ -91,11 +91,16 @@ export default function RunsPage() {
                       href={`/runs/${run.id}`}
                       className="text-blue-500 hover:underline font-medium"
                     >
-                      #{run.pr_number}
+                      {run.pr_number ? `#${run.pr_number}` : run.branch || "—"}
                     </Link>
                     {run.pr_title && (
                       <div className="text-sm text-[var(--muted)] truncate max-w-xs">
                         {run.pr_title}
+                      </div>
+                    )}
+                    {run.repo && run.repo !== "Pennyw0rth/NetExec" && (
+                      <div className="text-xs text-[var(--muted)] truncate max-w-xs">
+                        {run.repo}
                       </div>
                     )}
                   </td>

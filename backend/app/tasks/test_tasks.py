@@ -38,9 +38,10 @@ def run_pr_test(
 
         # Send notification
         if test_run.status in (TestRunStatus.COMPLETED, TestRunStatus.FAILED):
+            label = f"PR #{test_run.pr_number}" if test_run.pr_number else f"branch '{test_run.branch}'"
             notifier.send_test_completion_email(
-                pr_number=test_run.pr_number,
-                pr_title=test_run.pr_title or f"PR #{test_run.pr_number}",
+                pr_number=test_run.pr_number or 0,
+                pr_title=test_run.pr_title or label,
                 status=test_run.status.value,
                 passed=test_run.passed_tests or 0,
                 failed=test_run.failed_tests or 0,

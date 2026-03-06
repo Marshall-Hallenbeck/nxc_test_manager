@@ -3,31 +3,59 @@ set -e
 
 cd /netexec
 
-# Check if this is a PR-specific image (deps already installed) or base image
-if [ -d ".git" ] && git rev-parse --verify "pr-${PR_NUMBER}" >/dev/null 2>&1; then
-    echo "=== Using pre-built PR image with cached dependencies ==="
-    git checkout -q "pr-${PR_NUMBER}"
-else
-    echo "=== Fetching PR #${PR_NUMBER} ==="
-    # Initialize git repo and fetch just the PR
-    rm -rf .git 2>/dev/null || true
-    git init -q
-    git remote add origin https://github.com/Pennyw0rth/NetExec.git
-    git fetch --depth 1 origin "pull/${PR_NUMBER}/head:pr-${PR_NUMBER}"
-    git checkout -q "pr-${PR_NUMBER}"
+# Default repo URL (overridden by env var for fork support)
+REPO_URL="${REPO_URL:-https://github.com/Pennyw0rth/NetExec.git}"
 
-    # Check if dependencies changed by comparing poetry.lock
-    echo "=== Checking dependencies ==="
-    if [ -f /poetry.lock.base ] && diff -q poetry.lock /poetry.lock.base > /dev/null 2>&1; then
-        echo "Dependencies unchanged - using cached installation"
+if [ -n "$PR_NUMBER" ]; then
+    # --- PR mode ---
+    # Check if this is a PR-specific image (deps already installed) or base image
+    if [ -d ".git" ] && git rev-parse --verify "pr-${PR_NUMBER}" >/dev/null 2>&1; then
+        echo "=== Using pre-built PR image with cached dependencies ==="
+        git checkout -q "pr-${PR_NUMBER}"
     else
-        echo "Dependencies changed - reinstalling with Poetry"
-        poetry config virtualenvs.create false
-        poetry install --no-interaction
-        # Poetry bug: git deps pinned to HEAD can be silently dropped during update.
-        # Force-reinstall them with pip as a workaround.
-        grep -oP 'git\+https://[^"]+' pyproject.toml | xargs -r pip install --force-reinstall --no-deps
+        echo "=== Fetching PR #${PR_NUMBER} ==="
+        rm -rf .git 2>/dev/null || true
+        git init -q
+        git remote add origin "$REPO_URL"
+        git fetch --depth 1 origin "pull/${PR_NUMBER}/head:pr-${PR_NUMBER}"
+        git checkout -q "pr-${PR_NUMBER}"
+
+        echo "=== Checking dependencies ==="
+        if [ -f /poetry.lock.base ] && diff -q poetry.lock /poetry.lock.base > /dev/null 2>&1; then
+            echo "Dependencies unchanged - using cached installation"
+        else
+            echo "Dependencies changed - reinstalling with Poetry"
+            poetry config virtualenvs.create false
+            poetry install --no-interaction
+            grep -oP 'git\+https://[^"]+' pyproject.toml | xargs -r pip install --force-reinstall --no-deps
+        fi
     fi
+elif [ -n "$BRANCH" ]; then
+    # --- Branch mode ---
+    # Check if this is a pre-built branch image (deps already installed)
+    if [ -d ".git" ] && [ -f /poetry.lock.base ]; then
+        echo "=== Using pre-built branch image with cached dependencies ==="
+    else
+        echo "=== Fetching branch '${BRANCH}' ==="
+        rm -rf .git 2>/dev/null || true
+        git init -q
+        git remote add origin "$REPO_URL"
+        git fetch --depth 1 origin "$BRANCH"
+        git checkout -q FETCH_HEAD
+
+        echo "=== Checking dependencies ==="
+        if [ -f /poetry.lock.base ] && diff -q poetry.lock /poetry.lock.base > /dev/null 2>&1; then
+            echo "Dependencies unchanged - using cached installation"
+        else
+            echo "Dependencies changed - reinstalling with Poetry"
+            poetry config virtualenvs.create false
+            poetry install --no-interaction
+            grep -oP 'git\+https://[^"]+' pyproject.toml | xargs -r pip install --force-reinstall --no-deps
+        fi
+    fi
+else
+    echo "ERROR: Neither PR_NUMBER nor BRANCH is set"
+    exit 1
 fi
 
 # Verify critical dependencies are importable before running tests

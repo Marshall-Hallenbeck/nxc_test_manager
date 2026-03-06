@@ -117,7 +117,9 @@ export default function TestRunDetailPage() {
   function handleRerun() {
     if (!run) return;
     const params = new URLSearchParams();
-    params.set("pr_number", String(run.pr_number));
+    if (run.pr_number) params.set("pr_number", String(run.pr_number));
+    if (run.branch) params.set("branch", run.branch);
+    if (run.repo) params.set("repo", run.repo);
     if (run.target_hosts) params.set("target_hosts", run.target_hosts);
     if (run.target_username) params.set("target_username", run.target_username);
     if (run.target_password) params.set("target_password", run.target_password);
@@ -142,7 +144,7 @@ export default function TestRunDetailPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold">
-            PR #{run.pr_number}
+            {run.pr_number ? `PR #${run.pr_number}` : run.branch || "Test Run"}
             {run.pr_title && (
               <span className="text-[var(--muted)] text-xl ml-3">{run.pr_title}</span>
             )}
@@ -150,6 +152,7 @@ export default function TestRunDetailPage() {
           <div className="flex items-center gap-3 mt-2 text-sm text-[var(--muted)]">
             <StatusBadge status={run.status} />
             {run.commit_sha && <span>SHA: {run.commit_sha.slice(0, 7)}</span>}
+            {run.repo && run.repo !== "Pennyw0rth/NetExec" && <span>Repo: {run.repo}</span>}
             <span>Targets: {run.target_hosts}</span>
           </div>
         </div>

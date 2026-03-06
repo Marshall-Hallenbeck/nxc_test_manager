@@ -7,6 +7,8 @@ import { useClaudeAvailability } from "@/lib/claude";
 
 const PROTOCOLS = ["smb", "wmi", "ldap", "winrm", "mssql", "rdp", "ssh", "ftp", "nfs"];
 
+type SourceMode = "pr" | "branch";
+
 interface PROption {
   number: number;
   title: string;
@@ -25,12 +27,15 @@ export default function Home() {
 function SubmitForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [sourceMode, setSourceMode] = useState<SourceMode>("pr");
   const [prNumber, setPrNumber] = useState("");
   const [prQuery, setPrQuery] = useState("");
   const [prOptions, setPrOptions] = useState<PROption[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [prLoading, setPrLoading] = useState(false);
+  const [branch, setBranch] = useState("");
+  const [repo, setRepo] = useState("");
   const [targetHosts, setTargetHosts] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -51,15 +56,23 @@ function SubmitForm() {
   // Pre-fill form from query params (used by Re-run)
   useEffect(() => {
     const pr = searchParams.get("pr_number");
-    if (!pr) return;
+    const branchParam = searchParams.get("branch");
+    const repoParam = searchParams.get("repo");
 
-    setPrNumber(pr);
-    setPrQuery(`#${pr}`);
-    // Fetch PR title for the typeahead display
-    api.searchPRs(pr).then((results) => {
-      const match = results.find((r) => r.number === Number(pr));
-      if (match) setPrQuery(`#${match.number} - ${match.title}`);
-    }).catch(() => {});
+    if (branchParam) {
+      setSourceMode("branch");
+      setBranch(branchParam);
+    } else if (pr) {
+      setSourceMode("pr");
+      setPrNumber(pr);
+      setPrQuery(`#${pr}`);
+      api.searchPRs(pr).then((results) => {
+        const match = results.find((r) => r.number === Number(pr));
+        if (match) setPrQuery(`#${match.number} - ${match.title}`);
+      }).catch(() => {});
+    }
+
+    if (repoParam) setRepo(repoParam);
 
     const hosts = searchParams.get("target_hosts");
     if (hosts) setTargetHosts(hosts);
@@ -138,15 +151,24 @@ function SubmitForm() {
     setPrOptions([]);
   }
 
+  const canSubmit =
+    sourceMode === "pr" ? !!prNumber : !!branch;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setSubmitting(true);
 
     try {
-      const data: Record<string, unknown> = {
-        pr_number: parseInt(prNumber),
-      };
+      const data: Record<string, unknown> = {};
+
+      if (sourceMode === "pr") {
+        data.pr_number = parseInt(prNumber);
+      } else {
+        data.branch = branch;
+      }
+
+      if (repo) data.repo = repo;
       if (targetHosts) data.target_hosts = targetHosts;
       if (username) data.target_username = username;
       if (password) data.target_password = password;
@@ -171,99 +193,153 @@ function SubmitForm() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6">Submit PR for Testing</h1>
+      <h1 className="text-3xl font-bold mb-6">Submit Test Run</h1>
 
       <form onSubmit={handleSubmit} className="max-w-lg space-y-4">
-        <div ref={dropdownRef} className="relative">
-          <label className="block text-sm font-medium mb-1">Pull Request *</label>
+        {/* Source mode toggle */}
+        <div>
+          <label className="block text-sm font-medium mb-2">Test Source *</label>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="radio"
+                name="sourceMode"
+                checked={sourceMode === "pr"}
+                onChange={() => setSourceMode("pr")}
+                className="accent-blue-500"
+              />
+              PR Number
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="radio"
+                name="sourceMode"
+                checked={sourceMode === "branch"}
+                onChange={() => setSourceMode("branch")}
+                className="accent-blue-500"
+              />
+              Branch
+            </label>
+          </div>
+        </div>
+
+        {/* PR number input (shown in PR mode) */}
+        {sourceMode === "pr" && (
+          <div ref={dropdownRef} className="relative">
+            <label className="block text-sm font-medium mb-1">Pull Request</label>
+            <input
+              type="text"
+              value={prQuery}
+              onChange={(e) => {
+                const val = e.target.value;
+                setPrQuery(val);
+                const num = val.replace(/^#/, "").trim();
+                if (/^\d+$/.test(num)) {
+                  setPrNumber(num);
+                } else {
+                  setPrNumber("");
+                }
+              }}
+              onKeyDown={(e) => {
+                if (!showDropdown || prOptions.length === 0) return;
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setHighlightedIndex((prev) =>
+                    prev < prOptions.length - 1 ? prev + 1 : 0
+                  );
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setHighlightedIndex((prev) =>
+                    prev > 0 ? prev - 1 : prOptions.length - 1
+                  );
+                } else if (e.key === "Enter" && highlightedIndex >= 0) {
+                  e.preventDefault();
+                  selectPR(prOptions[highlightedIndex]);
+                } else if (e.key === "Escape") {
+                  setShowDropdown(false);
+                }
+              }}
+              onFocus={() => {
+                if (prOptions.length > 0) setShowDropdown(true);
+                else if (!prQuery) {
+                  setPrQuery(" ");
+                  setTimeout(() => setPrQuery(""), 0);
+                  setPrLoading(true);
+                  api.searchPRs("").then((results) => {
+                    setPrOptions(results);
+                    setShowDropdown(true);
+                  }).catch(() => {}).finally(() => setPrLoading(false));
+                }
+              }}
+              placeholder="Type PR # or search by title..."
+              className="w-full border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
+              autoComplete="off"
+            />
+            {prNumber && (
+              <div className="absolute right-3 top-[2.1rem] text-xs text-[var(--muted)]">
+                PR #{prNumber}
+              </div>
+            )}
+            {prLoading && (
+              <div className="absolute right-3 top-[2.1rem] text-xs text-[var(--muted)]">
+                Searching...
+              </div>
+            )}
+            {showDropdown && prOptions.length > 0 && (
+              <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl">
+                {prOptions.map((pr, idx) => (
+                  <button
+                    key={pr.number}
+                    type="button"
+                    ref={idx === highlightedIndex ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+                    onClick={() => selectPR(pr)}
+                    onMouseEnter={() => setHighlightedIndex(idx)}
+                    className={`w-full text-left px-3 py-2 transition-colors border-b border-[var(--card-border)] last:border-b-0 ${
+                      idx === highlightedIndex ? "bg-white/15" : "hover:bg-white/10"
+                    }`}
+                  >
+                    <span className="text-[var(--accent)] font-medium">#{pr.number}</span>
+                    <span className="ml-2">{pr.title}</span>
+                    <span className="ml-2 text-xs text-[var(--muted)]">by {pr.user}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {showDropdown && !prLoading && prQuery && prOptions.length === 0 && (
+              <div className="absolute z-50 mt-1 w-full bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl px-3 py-2 text-sm text-[var(--muted)]">
+                No open PRs found. You can still enter a PR number directly.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Branch input (shown in branch mode) */}
+        {sourceMode === "branch" && (
+          <div>
+            <label className="block text-sm font-medium mb-1">Branch Name</label>
+            <input
+              type="text"
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              placeholder="e.g. main, feature/my-branch"
+              className="w-full border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
+            />
+          </div>
+        )}
+
+        {/* Repository (optional, both modes) */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Repository</label>
           <input
             type="text"
-            value={prQuery}
-            onChange={(e) => {
-              const val = e.target.value;
-              setPrQuery(val);
-              // If they type a raw number, set it directly
-              const num = val.replace(/^#/, "").trim();
-              if (/^\d+$/.test(num)) {
-                setPrNumber(num);
-              } else {
-                setPrNumber("");
-              }
-            }}
-            onKeyDown={(e) => {
-              if (!showDropdown || prOptions.length === 0) return;
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setHighlightedIndex((prev) =>
-                  prev < prOptions.length - 1 ? prev + 1 : 0
-                );
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setHighlightedIndex((prev) =>
-                  prev > 0 ? prev - 1 : prOptions.length - 1
-                );
-              } else if (e.key === "Enter" && highlightedIndex >= 0) {
-                e.preventDefault();
-                selectPR(prOptions[highlightedIndex]);
-              } else if (e.key === "Escape") {
-                setShowDropdown(false);
-              }
-            }}
-            onFocus={() => {
-              if (prOptions.length > 0) setShowDropdown(true);
-              else if (!prQuery) {
-                setPrQuery(" ");
-                setTimeout(() => setPrQuery(""), 0);
-                // Trigger initial load
-                setPrLoading(true);
-                api.searchPRs("").then((results) => {
-                  setPrOptions(results);
-                  setShowDropdown(true);
-                }).catch(() => {}).finally(() => setPrLoading(false));
-              }
-            }}
-            required={!prNumber}
-            placeholder="Type PR # or search by title..."
+            value={repo}
+            onChange={(e) => setRepo(e.target.value)}
+            placeholder="Pennyw0rth/NetExec"
             className="w-full border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
-            autoComplete="off"
           />
-          {prNumber && (
-            <div className="absolute right-3 top-[2.1rem] text-xs text-[var(--muted)]">
-              PR #{prNumber}
-            </div>
-          )}
-          {prLoading && (
-            <div className="absolute right-3 top-[2.1rem] text-xs text-[var(--muted)]">
-              Searching...
-            </div>
-          )}
-          {showDropdown && prOptions.length > 0 && (
-            <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl">
-              {prOptions.map((pr, idx) => (
-                <button
-                  key={pr.number}
-                  type="button"
-                  ref={idx === highlightedIndex ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
-                  onClick={() => selectPR(pr)}
-                  onMouseEnter={() => setHighlightedIndex(idx)}
-                  className={`w-full text-left px-3 py-2 transition-colors border-b border-[var(--card-border)] last:border-b-0 ${
-                    idx === highlightedIndex ? "bg-white/15" : "hover:bg-white/10"
-                  }`}
-                >
-                  <span className="text-[var(--accent)] font-medium">#{pr.number}</span>
-                  <span className="ml-2">{pr.title}</span>
-                  <span className="ml-2 text-xs text-[var(--muted)]">by {pr.user}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {showDropdown && !prLoading && prQuery && prOptions.length === 0 && (
-            <div className="absolute z-50 mt-1 w-full bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl px-3 py-2 text-sm text-[var(--muted)]">
-              No open PRs found. You can still enter a PR number directly.
-            </div>
-          )}
-          {/* Hidden required input for form validation */}
-          <input type="hidden" name="pr_number" value={prNumber} required />
+          <p className="text-xs text-[var(--muted)] mt-1">
+            Optional. Use owner/name format to test a fork. Leave empty for default repo.
+          </p>
         </div>
 
         <div>
@@ -395,7 +471,7 @@ function SubmitForm() {
             <input
               type="checkbox"
               checked={aiReview}
-              disabled={!claudeAvailable}
+              disabled={!claudeAvailable || sourceMode === "branch"}
               onChange={(e) => {
                 const checked = e.target.checked;
                 setAiReview(checked);
@@ -406,9 +482,10 @@ function SubmitForm() {
               }}
               className="rounded"
             />
-            <span className={!claudeAvailable ? "text-[var(--muted)]" : ""}>
+            <span className={!claudeAvailable || sourceMode === "branch" ? "text-[var(--muted)]" : ""}>
               AI review (Claude analyzes PR diff + test results on completion)
               {!claudeAvailable && <span className="ml-1 text-yellow-400/70">(unavailable)</span>}
+              {sourceMode === "branch" && claudeAvailable && <span className="ml-1 text-yellow-400/70">(PR only)</span>}
             </span>
           </label>
           {aiReview && (!verbose || !showErrors) && (
@@ -426,7 +503,7 @@ function SubmitForm() {
 
         <button
           type="submit"
-          disabled={submitting || !prNumber}
+          disabled={submitting || !canSubmit}
           className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
         >
           {submitting ? "Submitting..." : "Run Tests"}

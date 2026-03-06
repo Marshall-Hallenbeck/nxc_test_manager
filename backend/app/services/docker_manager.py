@@ -17,9 +17,10 @@ RICH_SOURCE_PATH = re.compile(r'\s{10,}\S+:\d+\s*$')
 
 DOCKER_IMAGE_NAME = "netexec-test-runner"
 DOCKERFILE_DIR = str(Path(__file__).resolve().parent.parent.parent / "docker" / "test-runner")
+NETEXEC_REPO = "Pennyw0rth/NetExec"
 
 # Cache for poetry.lock hashes to avoid repeated GitHub API calls
-_poetry_lock_cache: dict[int, str] = {}
+_poetry_lock_cache: dict[str, str] = {}
 
 
 def get_client() -> docker.DockerClient:
@@ -55,59 +56,102 @@ def get_base_poetry_lock_hash() -> str:
         return ""
 
 
-def get_pr_poetry_lock_hash(pr_number: int) -> str:
-    """Fetch poetry.lock from a PR and return its hash."""
-    if pr_number in _poetry_lock_cache:
-        return _poetry_lock_cache[pr_number]
+def _repo_hash(repo: str) -> str:
+    """Short hash of repo name for image tag namespacing."""
+    return hashlib.sha256(repo.encode()).hexdigest()[:8]
+
+
+def get_poetry_lock_hash(
+    pr_number: int | None = None,
+    branch: str | None = None,
+    repo: str | None = None,
+) -> str:
+    """Fetch poetry.lock from a PR or branch and return its hash."""
+    repo = repo or NETEXEC_REPO
+    cache_key = f"{repo}:pr-{pr_number}" if pr_number else f"{repo}:branch-{branch}"
+
+    if cache_key in _poetry_lock_cache:
+        return _poetry_lock_cache[cache_key]
 
     try:
-        # Fetch poetry.lock from the PR's head commit
-        url = f"https://raw.githubusercontent.com/Pennyw0rth/NetExec/refs/pull/{pr_number}/head/poetry.lock"
+        if pr_number:
+            url = f"https://raw.githubusercontent.com/{repo}/refs/pull/{pr_number}/head/poetry.lock"
+        else:
+            url = f"https://raw.githubusercontent.com/{repo}/refs/heads/{branch}/poetry.lock"
         resp = httpx.get(url, timeout=30, follow_redirects=True)
         if resp.status_code == 200:
             hash_val = hashlib.sha256(resp.content).hexdigest()[:16]
-            _poetry_lock_cache[pr_number] = hash_val
+            _poetry_lock_cache[cache_key] = hash_val
             return hash_val
     except Exception as e:
-        logger.warning(f"Could not fetch poetry.lock for PR #{pr_number}: {e}")
+        label = f"PR #{pr_number}" if pr_number else f"branch '{branch}'"
+        logger.warning(f"Could not fetch poetry.lock for {label} in {repo}: {e}")
 
     return ""
 
 
-def get_pr_image_name(pr_number: int) -> str:
-    """Get the image name for a specific PR."""
-    return f"{DOCKER_IMAGE_NAME}:pr-{pr_number}"
+def get_source_image_name(
+    pr_number: int | None = None,
+    branch: str | None = None,
+    repo: str | None = None,
+) -> str:
+    """Get the image name for a specific PR or branch."""
+    repo = repo or NETEXEC_REPO
+    rh = _repo_hash(repo)
+    if pr_number:
+        return f"{DOCKER_IMAGE_NAME}:{rh}-pr-{pr_number}"
+    return f"{DOCKER_IMAGE_NAME}:{rh}-branch-{branch}"
 
 
-def pr_image_exists(pr_number: int) -> bool:
-    """Check if a PR-specific image exists."""
+def source_image_exists(
+    pr_number: int | None = None,
+    branch: str | None = None,
+    repo: str | None = None,
+) -> bool:
+    """Check if a source-specific image exists."""
     client = get_client()
     try:
-        client.images.get(get_pr_image_name(pr_number))
+        client.images.get(get_source_image_name(pr_number, branch, repo))
         return True
     except docker.errors.ImageNotFound:
         return False
 
 
-def build_pr_image(pr_number: int, log_callback=None) -> bool:
-    """Build a PR-specific image with updated dependencies."""
+def build_source_image(
+    pr_number: int | None = None,
+    branch: str | None = None,
+    repo: str | None = None,
+    log_callback=None,
+) -> bool:
+    """Build a source-specific image with updated dependencies."""
     client = get_client()
-    pr_image = get_pr_image_name(pr_number)
+    repo = repo or NETEXEC_REPO
+    image_tag = get_source_image_name(pr_number, branch, repo)
+    label = f"PR #{pr_number}" if pr_number else f"branch '{branch}'"
 
     if log_callback:
-        log_callback(f"Building PR-specific image for updated dependencies...")
+        log_callback(f"Building image for {label} with updated dependencies...")
 
-    # Create a temporary Dockerfile that installs deps for this PR
+    if pr_number:
+        fetch_cmd = (
+            f"git fetch --depth 1 origin pull/{pr_number}/head:pr-{pr_number} && "
+            f"git checkout -q pr-{pr_number}"
+        )
+    else:
+        fetch_cmd = (
+            f"git fetch --depth 1 origin {branch} && "
+            f"git checkout -q FETCH_HEAD"
+        )
+
     dockerfile_content = f"""
 FROM {DOCKER_IMAGE_NAME}:latest
 
 WORKDIR /netexec
 
-# Fetch and checkout the PR
+# Fetch and checkout the source
 RUN git init -q && \\
-    git remote add origin https://github.com/Pennyw0rth/NetExec.git && \\
-    git fetch --depth 1 origin pull/{pr_number}/head:pr-{pr_number} && \\
-    git checkout -q pr-{pr_number}
+    git remote add origin https://github.com/{repo}.git && \\
+    {fetch_cmd}
 
 # Install updated dependencies
 # Poetry has a bug where git deps pinned to HEAD can be silently removed during
@@ -120,7 +164,7 @@ RUN poetry config virtualenvs.create false && \\
 # Verify critical dependencies are installed
 RUN python -c "from nxc.connection import connection; print('Dependency check passed')"
 
-# Save PR's poetry.lock as the new base for this image
+# Save poetry.lock as the new base for this image
 RUN cp poetry.lock /poetry.lock.base
 """
 
@@ -129,17 +173,15 @@ RUN cp poetry.lock /poetry.lock.base
             dockerfile_path = Path(tmpdir) / "Dockerfile"
             dockerfile_path.write_text(dockerfile_content)
 
-            # Build the image
-            logger.info(f"Building PR-specific image: {pr_image}")
+            logger.info(f"Building source-specific image: {image_tag}")
             image, build_logs = client.images.build(
                 path=tmpdir,
-                tag=pr_image,
+                tag=image_tag,
                 rm=True,
                 pull=False,
                 network_mode="host",
             )
 
-            # Log build output if callback provided
             if log_callback:
                 for log in build_logs:
                     if "stream" in log:
@@ -147,59 +189,67 @@ RUN cp poetry.lock /poetry.lock.base
                         if line:
                             log_callback(line)
 
-            logger.info(f"Successfully built {pr_image}")
+            logger.info(f"Successfully built {image_tag}")
             return True
 
     except Exception as e:
-        logger.error(f"Failed to build PR image: {e}")
+        logger.error(f"Failed to build source image: {e}")
         if log_callback:
-            log_callback(f"Failed to build PR-specific image: {e}")
+            log_callback(f"Failed to build image: {e}")
         return False
 
 
-def get_image_for_pr(pr_number: int, log_callback=None) -> str:
-    """Get the appropriate image for a PR, building if needed.
+def get_image(
+    pr_number: int | None = None,
+    branch: str | None = None,
+    repo: str | None = None,
+    log_callback=None,
+) -> str:
+    """Get the appropriate image for a PR or branch, building if needed.
 
     Returns the image name to use.
     """
     ensure_image_built()
+    repo = repo or NETEXEC_REPO
+    label = f"PR #{pr_number}" if pr_number else f"branch '{branch}'"
 
-    # Check if PR-specific image already exists
-    if pr_image_exists(pr_number):
-        logger.info(f"Using existing PR-specific image for PR #{pr_number}")
+    # For branch runs, always rebuild (branch HEAD may have changed)
+    # For PR runs, check cache
+    if pr_number and source_image_exists(pr_number=pr_number, repo=repo):
+        logger.info(f"Using existing image for {label} in {repo}")
         if log_callback:
-            log_callback("Using cached PR-specific image")
-        return get_pr_image_name(pr_number)
+            log_callback(f"Using cached image for {label}")
+        return get_source_image_name(pr_number=pr_number, repo=repo)
 
     # Compare poetry.lock hashes
     base_hash = get_base_poetry_lock_hash()
-    pr_hash = get_pr_poetry_lock_hash(pr_number)
+    source_hash = get_poetry_lock_hash(pr_number=pr_number, branch=branch, repo=repo)
 
-    if not pr_hash:
-        # Couldn't fetch PR's poetry.lock, use base image
-        logger.warning(f"Could not fetch poetry.lock for PR #{pr_number}, using base image")
+    if not source_hash:
+        logger.warning(f"Could not fetch poetry.lock for {label}, using base image")
         return DOCKER_IMAGE_NAME
 
-    if base_hash == pr_hash:
-        # Dependencies unchanged, use base image
-        logger.info(f"Dependencies unchanged for PR #{pr_number}, using base image")
+    if base_hash == source_hash:
+        logger.info(f"Dependencies unchanged for {label}, using base image")
         if log_callback:
             log_callback("Dependencies unchanged - using cached base image")
         return DOCKER_IMAGE_NAME
 
-    # Dependencies changed, build PR-specific image
-    logger.info(f"Dependencies changed for PR #{pr_number}, building PR-specific image")
-    if build_pr_image(pr_number, log_callback):
-        return get_pr_image_name(pr_number)
+    # Dependencies changed, build source-specific image
+    logger.info(f"Dependencies changed for {label}, building image")
+    if build_source_image(pr_number=pr_number, branch=branch, repo=repo, log_callback=log_callback):
+        return get_source_image_name(pr_number=pr_number, branch=branch, repo=repo)
     else:
-        raise RuntimeError(f"Failed to build PR-specific image for PR #{pr_number}. Dependencies could not be installed.")
+        raise RuntimeError(f"Failed to build image for {label}. Dependencies could not be installed.")
 
 
 def run_test_container(
-    pr_number: int,
+    pr_number: int | None,
     target_host: str,
     target_username: str,
     target_password: str,
+    branch: str | None = None,
+    repo: str | None = None,
     protocols: str | None = None,
     kerberos: bool = False,
     verbose: bool = False,
@@ -213,10 +263,12 @@ def run_test_container(
     """Run an ephemeral test container and stream output.
 
     Args:
-        pr_number: GitHub PR number to test
+        pr_number: GitHub PR number to test (None for branch runs)
         target_host: Target IP/hostname
         target_username: Auth username
         target_password: Auth password
+        branch: Branch name to test (None for PR runs)
+        repo: Repository in owner/name format (None for default)
         protocols: Comma-separated protocols to test (empty = all)
         kerberos: Use Kerberos authentication
         verbose: Display full command output
@@ -231,13 +283,18 @@ def run_test_container(
         (exit_code, container_id)
     """
     client = get_client()
+    repo = repo or NETEXEC_REPO
+    label = f"PR #{pr_number}" if pr_number else f"branch '{branch}'"
 
     # Use provided image or resolve it
     if not image_name:
-        image_name = get_image_for_pr(pr_number, log_callback)
+        image_name = get_image(pr_number=pr_number, branch=branch, repo=repo, log_callback=log_callback)
 
     env = {
-        "PR_NUMBER": str(pr_number),
+        "PR_NUMBER": str(pr_number) if pr_number else "",
+        "BRANCH": branch or "",
+        "REPO": repo,
+        "REPO_URL": f"https://github.com/{repo}.git",
         "TARGET_HOST": target_host,
         "TARGET_USERNAME": target_username,
         "TARGET_PASSWORD": target_password,
@@ -275,7 +332,7 @@ def run_test_container(
     )
 
     container_id = container.id
-    logger.info(f"Started container {container_id[:12]} for PR #{pr_number} using {image_name}")
+    logger.info(f"Started container {container_id[:12]} for {label} using {image_name}")
 
     # Stream logs - buffer chunks and split on actual newlines
     try:
@@ -340,27 +397,27 @@ def cleanup_pr_images(keep_recent: int = 10) -> int:
     removed = 0
 
     try:
-        # List all PR-specific images
+        # List all source-specific images (PR and branch)
         images = client.images.list(name=DOCKER_IMAGE_NAME)
-        pr_images = []
+        source_images = []
 
         for img in images:
             for tag in img.tags:
-                if ":pr-" in tag:
-                    pr_images.append((img, tag))
+                if ":" in tag and tag != f"{DOCKER_IMAGE_NAME}:latest":
+                    source_images.append((img, tag))
 
         # Sort by creation date (newest first) and remove old ones
-        pr_images.sort(key=lambda x: x[0].attrs.get("Created", ""), reverse=True)
+        source_images.sort(key=lambda x: x[0].attrs.get("Created", ""), reverse=True)
 
-        for img, tag in pr_images[keep_recent:]:
+        for _img, tag in source_images[keep_recent:]:
             try:
                 client.images.remove(tag, force=True)
-                logger.info(f"Removed old PR image: {tag}")
+                logger.info(f"Removed old image: {tag}")
                 removed += 1
             except Exception as e:
                 logger.warning(f"Could not remove {tag}: {e}")
 
     except Exception as e:
-        logger.error(f"Error during PR image cleanup: {e}")
+        logger.error(f"Error during image cleanup: {e}")
 
     return removed

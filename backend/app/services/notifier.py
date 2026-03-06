@@ -29,10 +29,11 @@ def send_test_completion_email(
         logger.info("SMTP not configured, skipping email notification")
         return False
 
-    subject = f"NetExec PR #{pr_number} Tests {status.upper()}"
+    label = f"PR #{pr_number}" if pr_number else pr_title
+    subject = f"NetExec {label} Tests {status.upper()}"
     body = f"""NetExec E2E Test Results
 
-PR: #{pr_number} - {pr_title}
+{label}: {pr_title}
 Status: {status.upper()}
 Results: {passed}/{total} passed, {failed} failed
 Targets: {target_hosts}

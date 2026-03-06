@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     empire_username: str = "empireadmin"
     empire_password: str = "password123"
 
+    # Default repository (owner/name format)
+    default_repo: str = "Pennyw0rth/NetExec"
+
     # GitHub Webhooks (disabled by default)
     webhook_enabled: bool = False
     webhook_secret: str = ""

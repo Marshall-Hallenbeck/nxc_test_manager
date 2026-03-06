@@ -29,6 +29,8 @@ def create_test_run(data: TestRunCreate, db: Session = Depends(get_db)):
     password = data.target_password or settings.default_target_password
     test_run = TestRun(
         pr_number=data.pr_number,
+        branch=data.branch,
+        repo=data.repo,
         target_hosts=data.target_hosts or settings.default_target_hosts,
         target_username=data.target_username or settings.default_target_username,
         target_password=password,
@@ -63,6 +65,7 @@ def list_test_runs(
     per_page: int = Query(20, ge=1, le=100),
     status: str | None = None,
     pr_number: int | None = None,
+    branch: str | None = None,
     db: Session = Depends(get_db),
 ):
     """List all test runs with optional filtering."""
@@ -72,6 +75,8 @@ def list_test_runs(
         query = query.filter(TestRun.status == status)
     if pr_number:
         query = query.filter(TestRun.pr_number == pr_number)
+    if branch:
+        query = query.filter(TestRun.branch == branch)
 
     total = query.count()
     items = (

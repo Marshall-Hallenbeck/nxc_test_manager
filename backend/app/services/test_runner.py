@@ -41,14 +41,14 @@ def parse_test_output(output: str) -> dict:
     """Parse test output to extract test results.
 
     Supports NetExec e2e_tests.py format which uses:
-    - Individual test lines ending with ✅ or ❌
+    - Individual test lines ending with checkmark or X mark
     - Summary line: "Ran X tests in Y - Passed: N Failed: M Not Tested: O"
 
     Returns dict with 'results' list (each with 'output' snippet) and 'summary' counts.
     """
     results = []
-    pass_markers = {"✅", "✔", "✓"}  # U+2705, U+2714, U+2713
-    fail_markers = {"❌"}              # U+274C
+    pass_markers = {"\u2705", "\u2714", "\u2713"}  # U+2705, U+2714, U+2713
+    fail_markers = {"\u274c"}              # U+274C
     all_markers = pass_markers | fail_markers
 
     # Split output into per-test sections at "Running command:" boundaries.
@@ -79,8 +79,8 @@ def parse_test_output(output: str) -> dict:
             cmd = line
             for m in all_markers:
                 cmd = cmd.replace(m, "")
-            if "└─$" in cmd:
-                cmd = cmd.split("└─$", 1)[1]
+            if "\u2514\u2500$" in cmd:
+                cmd = cmd.split("\u2514\u2500$", 1)[1]
             cmd = cmd.strip()
             if len(cmd) > 100:
                 cmd = cmd[:97] + "..."
@@ -147,14 +147,25 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
     test_run.started_at = datetime.now(UTC)
     db.commit()
 
+    # Determine effective repo
+    repo = test_run.repo or settings.default_repo
+
     try:
-        pr_info = github.get_pr_details(test_run.pr_number)
-        test_run.pr_title = pr_info["title"]
-        test_run.commit_sha = pr_info["head_sha"]
+        if test_run.pr_number:
+            # PR mode: fetch PR details
+            pr_info = github.get_pr_details(test_run.pr_number, repo=repo)
+            test_run.pr_title = pr_info["title"]
+            test_run.commit_sha = pr_info["head_sha"]
+        else:
+            # Branch mode: fetch branch details
+            branch_info = github.get_branch_details(test_run.branch, repo=repo)
+            test_run.pr_title = f"{test_run.branch} @ {repo}"
+            test_run.commit_sha = branch_info["head_sha"]
         db.commit()
     except Exception as e:
-        logger.error(f"Failed to fetch PR details for PR #{test_run.pr_number}: {e}")
-        add_log(db, test_run_id, f"FATAL: Could not fetch PR details from GitHub API: {e}", "ERROR")
+        label = f"PR #{test_run.pr_number}" if test_run.pr_number else f"branch '{test_run.branch}'"
+        logger.error(f"Failed to fetch details for {label} in {repo}: {e}")
+        add_log(db, test_run_id, f"FATAL: Could not fetch details from GitHub API: {e}", "ERROR")
         test_run.status = TestRunStatus.FAILED
         test_run.completed_at = datetime.now(UTC)
         db.commit()
@@ -169,10 +180,17 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
     def log(line: str):
         add_log(db, test_run_id, line)
 
+    label = f"PR #{test_run.pr_number}" if test_run.pr_number else f"branch '{test_run.branch}'"
+
     try:
-        image_name = docker_manager.get_image_for_pr(test_run.pr_number, log_callback=log)
+        image_name = docker_manager.get_image(
+            pr_number=test_run.pr_number,
+            branch=test_run.branch,
+            repo=repo,
+            log_callback=log,
+        )
     except Exception as e:
-        logger.error(f"Failed to prepare Docker image for PR #{test_run.pr_number}: {e}")
+        logger.error(f"Failed to prepare Docker image for {label}: {e}")
         add_log(db, test_run_id, f"FATAL: {e}", "ERROR")
         test_run.status = TestRunStatus.FAILED
         test_run.completed_at = datetime.now(UTC)
@@ -204,6 +222,8 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
                 target_host=host,
                 target_username=username,
                 target_password=password,
+                branch=test_run.branch,
+                repo=repo,
                 protocols=test_run.protocols,
                 kerberos=bool(test_run.kerberos),
                 verbose=bool(test_run.verbose),

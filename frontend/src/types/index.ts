@@ -1,6 +1,8 @@
 export interface TestRun {
   id: number;
-  pr_number: number;
+  pr_number: number | null;
+  branch: string | null;
+  repo: string | null;
   pr_title: string | null;
   commit_sha: string | null;
   target_hosts: string;

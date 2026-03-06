@@ -22,7 +22,9 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   createTestRun(data: {
-    pr_number: number;
+    pr_number?: number;
+    branch?: string;
+    repo?: string;
     target_hosts?: string;
     target_username?: string;
     target_password?: string;

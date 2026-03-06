@@ -21,7 +21,9 @@ class TestRun(Base):
     __tablename__ = "test_runs"
 
     id = Column(Integer, primary_key=True, index=True)
-    pr_number = Column(Integer, nullable=False, index=True)
+    pr_number = Column(Integer, nullable=True, index=True)
+    branch = Column(String(255), nullable=True)
+    repo = Column(String(255), nullable=True)
     pr_title = Column(String(500))
     commit_sha = Column(String(40))
     target_hosts = Column(Text, nullable=False)  # Comma-separated IPs/subnets
