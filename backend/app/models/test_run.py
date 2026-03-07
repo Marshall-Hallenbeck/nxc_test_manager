@@ -46,6 +46,7 @@ class TestRun(Base):
     total_tests = Column(Integer, default=0)
     passed_tests = Column(Integer, default=0)
     failed_tests = Column(Integer, default=0)
+    sub_status = Column(String(30))  # Current phase: fetching_pr_info, building_image, running_tests
     ai_review_status = Column(String(20))  # null, "running", "completed", "failed"
     ai_summary = Column(Text)
 

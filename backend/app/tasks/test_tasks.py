@@ -54,9 +54,10 @@ def run_pr_test(
             test_run = db.get(TestRun, test_run_id)
             if test_run and test_run.status != TestRunStatus.CANCELLED:
                 test_run.status = TestRunStatus.FAILED
+                test_run.sub_status = None
                 db.commit()
-        except Exception:
-            pass
+        except Exception as db_err:
+            logger.error(f"Failed to mark TestRun {test_run_id} as failed: {db_err}")
         raise
     finally:
         db.close()
@@ -85,6 +86,7 @@ def cancel_test_run(test_run_id: int) -> bool:
             docker_manager.stop_container(test_run.container_id)
 
         test_run.status = TestRunStatus.CANCELLED
+        test_run.sub_status = None
         db.commit()
         logger.info(f"Cancelled TestRun {test_run_id}")
         return True

@@ -105,7 +105,7 @@ export default function RunsPage() {
                     )}
                   </td>
                   <td className="py-3 pr-4">
-                    <StatusBadge status={run.status} />
+                    <StatusBadge status={run.status} subStatus={run.sub_status || (run.ai_review_status === "running" ? "AI reviewing" : null)} />
                   </td>
                   <td className="py-3 pr-4 text-sm text-[var(--muted)]">
                     {run.target_hosts}

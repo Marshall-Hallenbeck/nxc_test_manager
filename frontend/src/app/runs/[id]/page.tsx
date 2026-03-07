@@ -150,7 +150,7 @@ export default function TestRunDetailPage() {
             )}
           </h1>
           <div className="flex items-center gap-3 mt-2 text-sm text-[var(--muted)]">
-            <StatusBadge status={run.status} />
+            <StatusBadge status={run.status} subStatus={run.sub_status || (run.ai_review_status === "running" ? "AI reviewing" : null)} />
             {run.commit_sha && <span>SHA: {run.commit_sha.slice(0, 7)}</span>}
             {run.repo && run.repo !== "Pennyw0rth/NetExec" && <span>Repo: {run.repo}</span>}
             <span>Targets: {run.target_hosts}</span>

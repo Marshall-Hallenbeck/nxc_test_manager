@@ -76,6 +76,7 @@ class TestRunOut(BaseModel):
     not_tested: bool
     dns_server: str | None
     status: str
+    sub_status: str | None = None
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None

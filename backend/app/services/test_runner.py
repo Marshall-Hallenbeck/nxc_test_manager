@@ -144,6 +144,7 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
 
     # Mark as running
     test_run.status = TestRunStatus.RUNNING
+    test_run.sub_status = "fetching_pr_info"
     test_run.started_at = datetime.now(UTC)
     db.commit()
 
@@ -167,6 +168,7 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
         logger.error(f"Failed to fetch details for {label} in {repo}: {e}")
         add_log(db, test_run_id, f"FATAL: Could not fetch details from GitHub API: {e}", "ERROR")
         test_run.status = TestRunStatus.FAILED
+        test_run.sub_status = None
         test_run.completed_at = datetime.now(UTC)
         db.commit()
         return
@@ -177,6 +179,9 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
 
     # Resolve the Docker image before running any tests — if the image build
     # fails (e.g. dependencies can't be installed), abort the entire run.
+    test_run.sub_status = "building_image"
+    db.commit()
+
     def log(line: str):
         add_log(db, test_run_id, line)
 
@@ -193,9 +198,13 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
         logger.error(f"Failed to prepare Docker image for {label}: {e}")
         add_log(db, test_run_id, f"FATAL: {e}", "ERROR")
         test_run.status = TestRunStatus.FAILED
+        test_run.sub_status = None
         test_run.completed_at = datetime.now(UTC)
         db.commit()
         return
+
+    test_run.sub_status = "running_tests"
+    db.commit()
 
     all_output = []
     total_passed = 0
@@ -308,6 +317,7 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
     test_run.passed_tests = total_passed
     test_run.failed_tests = total_failed
     test_run.status = TestRunStatus.COMPLETED if total_failed == 0 else TestRunStatus.FAILED
+    test_run.sub_status = None
     test_run.completed_at = datetime.now(UTC)
     db.commit()
 

@@ -11,15 +11,22 @@ const colors: Record<string, string> = {
   skipped: "bg-gray-500/20 text-gray-400 border border-gray-500/50",
 };
 
-export default function StatusBadge({ status }: { status: string }) {
+const subStatusLabels: Record<string, string> = {
+  fetching_pr_info: "fetching PR info",
+  building_image: "building image",
+  running_tests: "running tests",
+};
+
+export default function StatusBadge({ status, subStatus }: { status: string; subStatus?: string | null }) {
+  const label = subStatus ? subStatusLabels[subStatus] || subStatus : null;
   return (
     <span
       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[status] || "bg-gray-500/20 text-gray-400 border border-gray-500/50"}`}
     >
-      {status === "running" && (
+      {(status === "running" || subStatus) && (
         <span className="mr-1 h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
       )}
-      {status}
+      {label ? `${status}: ${label}` : status}
     </span>
   );
 }

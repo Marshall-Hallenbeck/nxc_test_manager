@@ -9,6 +9,7 @@ export interface TestRun {
   target_username: string | null;
   target_password: string | null;
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  sub_status: string | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;

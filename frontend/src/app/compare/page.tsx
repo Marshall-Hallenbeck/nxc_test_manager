@@ -62,7 +62,7 @@ export default function ComparePage() {
             <div key={run.id} className="border border-[var(--card-border)] bg-[var(--card-bg)] rounded-lg p-4">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold">Run #{run.id} - PR #{run.pr_number}</h2>
-                <StatusBadge status={run.status} />
+                <StatusBadge status={run.status} subStatus={run.sub_status || (run.ai_review_status === "running" ? "AI reviewing" : null)} />
               </div>
               <div className="text-sm text-[var(--muted)] mb-4">{run.pr_title || "No title"}</div>
               <div className="grid grid-cols-3 gap-2 mb-4 text-center text-sm">
