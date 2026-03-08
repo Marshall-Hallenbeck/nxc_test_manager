@@ -34,7 +34,7 @@ describe("api.createTestRun", () => {
     const result = await api.createTestRun({ pr_number: 123 });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:8000/api/test-runs",
+      "/api/runs",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ pr_number: 123 }),
@@ -72,7 +72,7 @@ describe("api.listTestRuns", () => {
     await api.listTestRuns();
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:8000/api/test-runs?",
+      "/api/runs?",
       expect.objectContaining({
         headers: { "Content-Type": "application/json" },
       })
@@ -97,7 +97,7 @@ describe("api.cancelTestRun", () => {
     await api.cancelTestRun(5);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:8000/api/test-runs/5/cancel",
+      "/api/runs/5/cancel",
       expect.objectContaining({ method: "POST" })
     );
   });
@@ -110,7 +110,7 @@ describe("api.deleteTestRun", () => {
     await api.deleteTestRun(3);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:8000/api/test-runs/3",
+      "/api/runs/3",
       expect.objectContaining({ method: "DELETE" })
     );
   });
@@ -123,7 +123,7 @@ describe("api.compareTestRuns", () => {
     await api.compareTestRuns(1, 2);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:8000/api/test-runs/compare?run1=1&run2=2",
+      "/api/runs/compare?run1=1&run2=2",
       expect.anything()
     );
   });

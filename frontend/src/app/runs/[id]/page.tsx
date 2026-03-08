@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useClaudeAvailability } from "@/lib/claude";
 import StatusBadge from "@/components/StatusBadge";
 import LogViewer from "@/components/LogViewer";
-import type { TestRunDetail, TestResult } from "@/types";
+import type { TestRunDetail } from "@/types";
 
 type StatusFilter = "all" | "passed" | "failed" | "skipped" | "error";
 
@@ -22,6 +22,8 @@ export default function TestRunDetailPage() {
   const [reviewRequesting, setReviewRequesting] = useState(false);
   const { claudeAvailable, claudeUnavailableReason } = useClaudeAvailability();
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [resultsPage, setResultsPage] = useState(1);
+  const RESULTS_PER_PAGE = 10;
 
   function toggleSection(section: string) {
     setCollapsedSections((prev) => ({ ...prev, [section]: !prev[section] }));
@@ -44,40 +46,44 @@ export default function TestRunDetailPage() {
     return () => window.removeEventListener("hashchange", scrollToHash);
   }, []);
 
-  async function loadRun() {
+  const [reviewTriggered, setReviewTriggered] = useState(false);
+
+  const loadRun = useCallback(async () => {
     try {
       const data = (await api.getTestRun(id)) as TestRunDetail;
       setRun(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     }
-  }
-
-  const [reviewTriggered, setReviewTriggered] = useState(false);
+  }, [id]);
 
   useEffect(() => {
     loadRun();
     const interval = setInterval(loadRun, 5000);
     return () => clearInterval(interval);
-  }, [id]);
+  }, [loadRun]);
 
   // Auto-trigger AI review when run completes with ai_review_enabled
   // Only if there are actual test results to review (skip infrastructure failures)
   // Skip if Claude CLI is unavailable
+  const runStatus = run?.status;
+  const aiEnabled = run?.ai_review_enabled;
+  const aiStatus = run?.ai_review_status;
+  const totalTests = run?.total_tests ?? 0;
+
   useEffect(() => {
     if (
-      run &&
       claudeAvailable &&
-      run.ai_review_enabled &&
+      aiEnabled &&
       !reviewTriggered &&
-      !run.ai_review_status &&
-      (run.status === "completed" || run.status === "failed") &&
-      run.total_tests > 0
+      !aiStatus &&
+      (runStatus === "completed" || runStatus === "failed") &&
+      totalTests > 0
     ) {
       setReviewTriggered(true);
       api.reviewTestRun(id);
     }
-  }, [run?.status, run?.ai_review_enabled, run?.ai_review_status, run?.total_tests, claudeAvailable]);
+  }, [id, runStatus, aiEnabled, aiStatus, totalTests, reviewTriggered, claudeAvailable]);
 
   async function handleCancel() {
     if (!confirm("Cancel this test run?")) return;
@@ -239,7 +245,7 @@ export default function TestRunDetailPage() {
                   return (
                     <button
                       key={f}
-                      onClick={() => setStatusFilter(f)}
+                      onClick={() => { setStatusFilter(f); setResultsPage(1); }}
                       className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                         statusFilter === f
                           ? f === "passed" ? "bg-green-500/30 text-green-300 border border-green-500/50"
@@ -257,11 +263,13 @@ export default function TestRunDetailPage() {
               </div>
             )}
           </div>
-          {!collapsedSections.results && (
+          {!collapsedSections.results && (() => {
+            const filtered = run.results.filter((r) => statusFilter === "all" || r.status === statusFilter);
+            const totalPages = Math.ceil(filtered.length / RESULTS_PER_PAGE);
+            const paged = filtered.slice((resultsPage - 1) * RESULTS_PER_PAGE, resultsPage * RESULTS_PER_PAGE);
+            return (<>
             <div className="space-y-2">
-              {run.results
-                .filter((r) => statusFilter === "all" || r.status === statusFilter)
-                .map((result) => (
+              {paged.map((result) => (
                 <div key={result.id} className="border border-[var(--card-border)] bg-[var(--card-bg)] rounded-lg overflow-hidden">
                   <button
                     onClick={() => setExpandedId(expandedId === result.id ? null : result.id)}
@@ -312,7 +320,29 @@ export default function TestRunDetailPage() {
                 </div>
               ))}
             </div>
-          )}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-3">
+                <button
+                  onClick={() => setResultsPage((p) => Math.max(1, p - 1))}
+                  disabled={resultsPage === 1}
+                  className="px-3 py-1 border border-[var(--card-border)] rounded disabled:opacity-50 bg-[var(--card-bg)] text-sm"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-[var(--muted)]">
+                  Page {resultsPage} of {totalPages} ({filtered.length} results)
+                </span>
+                <button
+                  onClick={() => setResultsPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={resultsPage === totalPages}
+                  className="px-3 py-1 border border-[var(--card-border)] rounded disabled:opacity-50 bg-[var(--card-bg)] text-sm"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+            </>);
+          })()}
         </div>
       )}
 
