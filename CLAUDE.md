@@ -136,7 +136,7 @@ frontend/
 
 ## API Endpoints
 
-### REST (prefix: `/api/test-runs`)
+### REST (prefix: `/api/runs`)
 - `POST /` — Submit new test run (pr_number, optional: target_hosts, username, password)
 - `GET /` — List runs (query: page, status filter)
 - `GET /{id}` — Run detail with results
@@ -187,3 +187,20 @@ Supports flexible target specification:
 - Revokes Celery task
 - Stops and removes Docker container
 - Updates database status to `cancelled`
+
+## React Patterns
+
+### useEffect dependency arrays with polled state
+
+When a `useEffect` accesses properties of a polled object (e.g. `run.status` where `run` is refreshed every 5 seconds), don't add the full object to the dep array — that re-fires the effect on every poll. Instead, extract the needed properties into variables outside the effect:
+
+```tsx
+const runStatus = run?.status;
+const aiEnabled = run?.ai_review_enabled;
+
+useEffect(() => {
+  if (runStatus === "completed" && aiEnabled) { ... }
+}, [runStatus, aiEnabled]);
+```
+
+This satisfies `react-hooks/exhaustive-deps` without causing spurious re-runs.

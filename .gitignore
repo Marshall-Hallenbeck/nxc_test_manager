@@ -17,6 +17,7 @@ backend/*.db
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+test-results/
 
 # IDE
 .vscode
