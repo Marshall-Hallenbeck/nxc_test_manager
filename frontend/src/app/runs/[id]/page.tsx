@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useClaudeAvailability } from "@/lib/claude";
+import Markdown from "react-markdown";
 import StatusBadge from "@/components/StatusBadge";
 import LogViewer from "@/components/LogViewer";
 import type { TestRunDetail } from "@/types";
@@ -141,7 +142,7 @@ export default function TestRunDetailPage() {
   }
 
   if (error) return <div className="text-red-500">{error}</div>;
-  if (!run) return <div className="text-[var(--muted)]">Loading...</div>;
+  if (!run) return <div className="text-muted">Loading...</div>;
 
   const isActive = run.status === "queued" || run.status === "running";
 
@@ -152,10 +153,10 @@ export default function TestRunDetailPage() {
           <h1 className="text-3xl font-bold">
             {run.pr_number ? `PR #${run.pr_number}` : run.branch || "Test Run"}
             {run.pr_title && (
-              <span className="text-[var(--muted)] text-xl ml-3">{run.pr_title}</span>
+              <span className="text-muted text-xl ml-3">{run.pr_title}</span>
             )}
           </h1>
-          <div className="flex items-center gap-3 mt-2 text-sm text-[var(--muted)]">
+          <div className="flex items-center gap-3 mt-2 text-sm text-muted">
             <StatusBadge status={run.status} subStatus={run.sub_status || (run.ai_review_status === "running" ? "AI reviewing" : null)} />
             {run.commit_sha && <span>SHA: {run.commit_sha.slice(0, 7)}</span>}
             {run.repo && run.repo !== "Pennyw0rth/NetExec" && <span>Repo: {run.repo}</span>}
@@ -193,16 +194,16 @@ export default function TestRunDetailPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-4">
-          <div className="text-sm text-[var(--muted)]">Created</div>
+        <div className="bg-card border border-card-border rounded-lg p-4">
+          <div className="text-sm text-muted">Created</div>
           <div>{new Date(run.created_at).toLocaleString()}</div>
         </div>
-        <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-4">
-          <div className="text-sm text-[var(--muted)]">Started</div>
+        <div className="bg-card border border-card-border rounded-lg p-4">
+          <div className="text-sm text-muted">Started</div>
           <div>{run.started_at ? new Date(run.started_at).toLocaleString() : "-"}</div>
         </div>
-        <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-4">
-          <div className="text-sm text-[var(--muted)]">Completed</div>
+        <div className="bg-card border border-card-border rounded-lg p-4">
+          <div className="text-sm text-muted">Completed</div>
           <div>{run.completed_at ? new Date(run.completed_at).toLocaleString() : "-"}</div>
         </div>
       </div>
@@ -231,9 +232,9 @@ export default function TestRunDetailPage() {
               onClick={() => toggleSection("results")}
               className="text-xl font-semibold flex items-center gap-2 cursor-pointer select-none"
             >
-              <span className={`text-sm text-[var(--muted)] transition-transform ${collapsedSections.results ? "-rotate-90" : ""}`}>▾</span>
+              <span className={`text-sm text-muted transition-transform ${collapsedSections.results ? "-rotate-90" : ""}`}>▾</span>
               Test Results
-              <a href="#results" onClick={(e) => e.stopPropagation()} className="text-[var(--muted)] opacity-0 group-hover:opacity-100 text-sm transition-opacity">#</a>
+              <a href="#results" onClick={(e) => e.stopPropagation()} className="text-muted opacity-0 group-hover:opacity-100 text-sm transition-opacity">#</a>
             </h2>
             {!collapsedSections.results && (
               <div className="flex gap-1">
@@ -252,8 +253,8 @@ export default function TestRunDetailPage() {
                             : f === "failed" ? "bg-red-500/30 text-red-300 border border-red-500/50"
                             : f === "error" ? "bg-red-500/30 text-red-300 border border-red-500/50"
                             : f === "skipped" ? "bg-gray-500/30 text-gray-300 border border-gray-500/50"
-                            : "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/50"
-                          : "bg-[var(--card-bg)] text-[var(--muted)] border border-[var(--card-border)] hover:text-[var(--foreground)]"
+                            : "bg-accent/20 text-accent border border-accent/50"
+                          : "bg-card text-muted border border-card-border hover:text-foreground"
                       }`}
                     >
                       {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)} ({count})
@@ -270,7 +271,7 @@ export default function TestRunDetailPage() {
             return (<>
             <div className="space-y-2">
               {paged.map((result) => (
-                <div key={result.id} className="border border-[var(--card-border)] bg-[var(--card-bg)] rounded-lg overflow-hidden">
+                <div key={result.id} className="border border-card-border bg-card rounded-lg overflow-hidden">
                   <button
                     onClick={() => setExpandedId(expandedId === result.id ? null : result.id)}
                     className="w-full p-3 flex items-center justify-between text-left hover:bg-white/5 transition-colors"
@@ -281,7 +282,7 @@ export default function TestRunDetailPage() {
                       </span>
                       <div className="min-w-0">
                         <div className="font-medium truncate">{result.test_name}</div>
-                        <div className="text-xs text-[var(--muted)] flex gap-3">
+                        <div className="text-xs text-muted flex gap-3">
                           {result.target_host && <span>Target: {result.target_host}</span>}
                           {result.duration != null && <span>{result.duration.toFixed(1)}s</span>}
                         </div>
@@ -290,30 +291,30 @@ export default function TestRunDetailPage() {
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <button
                         onClick={(e) => handleCopy(e, result.id, result.test_name)}
-                        className="px-2 py-1 rounded text-xs text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-white/10 transition-colors"
+                        className="px-2 py-1 rounded text-xs text-muted hover:text-foreground hover:bg-white/10 transition-colors"
                         title="Copy command"
                       >
                         {copiedId === result.id ? "Copied!" : "Copy"}
                       </button>
                       <StatusBadge status={result.status} />
-                      <span className={`text-[var(--muted)] text-sm transition-transform ${expandedId === result.id ? "rotate-180" : ""}`}>
+                      <span className={`text-muted text-sm transition-transform ${expandedId === result.id ? "rotate-180" : ""}`}>
                         ▾
                       </span>
                     </div>
                   </button>
                   {expandedId === result.id && (
-                    <div className="border-t border-[var(--card-border)] p-3">
+                    <div className="border-t border-card-border p-3">
                       {result.error_message && (
                         <div className="mb-3 p-2 bg-red-900/20 border border-red-800 rounded text-sm text-red-300">
                           {result.error_message}
                         </div>
                       )}
                       {result.output ? (
-                        <pre className="text-xs text-[var(--muted)] bg-black/40 rounded p-3 overflow-x-auto max-h-80 overflow-y-auto whitespace-pre-wrap break-words">
+                        <pre className="text-xs text-muted bg-black/40 rounded p-3 overflow-x-auto max-h-80 overflow-y-auto whitespace-pre-wrap break-words">
                           {result.output}
                         </pre>
                       ) : (
-                        <div className="text-sm text-[var(--muted)]">No output captured.</div>
+                        <div className="text-sm text-muted">No output captured.</div>
                       )}
                     </div>
                   )}
@@ -325,17 +326,17 @@ export default function TestRunDetailPage() {
                 <button
                   onClick={() => setResultsPage((p) => Math.max(1, p - 1))}
                   disabled={resultsPage === 1}
-                  className="px-3 py-1 border border-[var(--card-border)] rounded disabled:opacity-50 bg-[var(--card-bg)] text-sm"
+                  className="px-3 py-1 border border-card-border rounded disabled:opacity-50 bg-card text-sm"
                 >
                   Previous
                 </button>
-                <span className="text-sm text-[var(--muted)]">
+                <span className="text-sm text-muted">
                   Page {resultsPage} of {totalPages} ({filtered.length} results)
                 </span>
                 <button
                   onClick={() => setResultsPage((p) => Math.min(totalPages, p + 1))}
                   disabled={resultsPage === totalPages}
-                  className="px-3 py-1 border border-[var(--card-border)] rounded disabled:opacity-50 bg-[var(--card-bg)] text-sm"
+                  className="px-3 py-1 border border-card-border rounded disabled:opacity-50 bg-card text-sm"
                 >
                   Next
                 </button>
@@ -353,30 +354,22 @@ export default function TestRunDetailPage() {
               onClick={() => toggleSection("ai-review")}
               className="text-xl font-semibold flex items-center gap-2 cursor-pointer select-none"
             >
-              <span className={`text-sm text-[var(--muted)] transition-transform ${collapsedSections["ai-review"] ? "-rotate-90" : ""}`}>▾</span>
+              <span className={`text-sm text-muted transition-transform ${collapsedSections["ai-review"] ? "-rotate-90" : ""}`}>▾</span>
               AI Review
-              <a href="#ai-review" onClick={(e) => e.stopPropagation()} className="text-[var(--muted)] opacity-0 group-hover:opacity-100 text-sm transition-opacity">#</a>
+              <a href="#ai-review" onClick={(e) => e.stopPropagation()} className="text-muted opacity-0 group-hover:opacity-100 text-sm transition-opacity">#</a>
             </h2>
           </div>
           {!collapsedSections["ai-review"] && (
-            <div className="bg-[var(--card-bg)] border border-purple-800/50 rounded-lg p-4">
+            <div className="bg-card border border-purple-800/50 rounded-lg p-4">
               {run.ai_review_status === "running" && !run.ai_summary && (
-                <div className="flex items-center gap-3 text-[var(--muted)]">
+                <div className="flex items-center gap-3 text-muted">
                   <div className="animate-spin h-4 w-4 border-2 border-purple-400 border-t-transparent rounded-full" />
                   Claude is reviewing this PR and test results...
                 </div>
               )}
               {run.ai_summary && (
-                <div className={`prose prose-invert prose-sm max-w-none ${run.ai_review_status === "failed" ? "text-red-300" : ""}`}>
-                  {run.ai_summary.split("\n").map((line, i) => {
-                    if (line.startsWith("# ")) return <h1 key={i} className="text-lg font-bold mt-3 mb-1">{line.slice(2)}</h1>;
-                    if (line.startsWith("## ")) return <h2 key={i} className="text-base font-semibold mt-3 mb-1">{line.slice(3)}</h2>;
-                    if (line.startsWith("### ")) return <h3 key={i} className="text-sm font-semibold mt-2 mb-1">{line.slice(4)}</h3>;
-                    if (line.startsWith("**") && line.endsWith("**")) return <p key={i} className="font-semibold mt-2">{line.slice(2, -2)}</p>;
-                    if (line.startsWith("- ")) return <li key={i} className="ml-4 list-disc">{line.slice(2)}</li>;
-                    if (line.trim() === "") return <br key={i} />;
-                    return <p key={i} className="my-1">{line}</p>;
-                  })}
+                <div className={`prose dark:prose-invert prose-sm max-w-none ${run.ai_review_status === "failed" ? "text-red-300" : ""}`}>
+                  <Markdown>{run.ai_summary}</Markdown>
                 </div>
               )}
             </div>
@@ -390,9 +383,9 @@ export default function TestRunDetailPage() {
             onClick={() => toggleSection("logs")}
             className="text-xl font-semibold flex items-center gap-2 cursor-pointer select-none"
           >
-            <span className={`text-sm text-[var(--muted)] transition-transform ${collapsedSections.logs ? "-rotate-90" : ""}`}>▾</span>
+            <span className={`text-sm text-muted transition-transform ${collapsedSections.logs ? "-rotate-90" : ""}`}>▾</span>
             {isActive ? "Live Logs" : "Logs"}
-            <a href="#logs" onClick={(e) => e.stopPropagation()} className="text-[var(--muted)] opacity-0 group-hover:opacity-100 text-sm transition-opacity">#</a>
+            <a href="#logs" onClick={(e) => e.stopPropagation()} className="text-muted opacity-0 group-hover:opacity-100 text-sm transition-opacity">#</a>
           </h2>
         </div>
         {!collapsedSections.logs && <LogViewer testRunId={id} />}

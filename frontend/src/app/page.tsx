@@ -18,7 +18,7 @@ interface PROption {
 
 export default function Home() {
   return (
-    <Suspense fallback={<div className="text-[var(--muted)]">Loading...</div>}>
+    <Suspense fallback={<div className="text-muted">Loading...</div>}>
       <SubmitForm />
     </Suspense>
   );
@@ -272,21 +272,21 @@ function SubmitForm() {
                 }
               }}
               placeholder="Type PR # or search by title..."
-              className="w-full border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
+              className="w-full border rounded-lg px-3 py-2 bg-input border-input-border"
               autoComplete="off"
             />
             {prNumber && (
-              <div className="absolute right-3 top-[2.1rem] text-xs text-[var(--muted)]">
+              <div className="absolute right-3 top-[2.1rem] text-xs text-muted">
                 PR #{prNumber}
               </div>
             )}
             {prLoading && (
-              <div className="absolute right-3 top-[2.1rem] text-xs text-[var(--muted)]">
+              <div className="absolute right-3 top-[2.1rem] text-xs text-muted">
                 Searching...
               </div>
             )}
             {showDropdown && prOptions.length > 0 && (
-              <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl">
+              <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto bg-card border border-card-border rounded-lg shadow-xl">
                 {prOptions.map((pr, idx) => (
                   <button
                     key={pr.number}
@@ -294,19 +294,19 @@ function SubmitForm() {
                     ref={idx === highlightedIndex ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
                     onClick={() => selectPR(pr)}
                     onMouseEnter={() => setHighlightedIndex(idx)}
-                    className={`w-full text-left px-3 py-2 transition-colors border-b border-[var(--card-border)] last:border-b-0 ${
+                    className={`w-full text-left px-3 py-2 transition-colors border-b border-card-border last:border-b-0 ${
                       idx === highlightedIndex ? "bg-white/15" : "hover:bg-white/10"
                     }`}
                   >
-                    <span className="text-[var(--accent)] font-medium">#{pr.number}</span>
+                    <span className="text-accent font-medium">#{pr.number}</span>
                     <span className="ml-2">{pr.title}</span>
-                    <span className="ml-2 text-xs text-[var(--muted)]">by {pr.user}</span>
+                    <span className="ml-2 text-xs text-muted">by {pr.user}</span>
                   </button>
                 ))}
               </div>
             )}
             {showDropdown && !prLoading && prQuery && prOptions.length === 0 && (
-              <div className="absolute z-50 mt-1 w-full bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg shadow-xl px-3 py-2 text-sm text-[var(--muted)]">
+              <div className="absolute z-50 mt-1 w-full bg-card border border-card-border rounded-lg shadow-xl px-3 py-2 text-sm text-muted">
                 No open PRs found. You can still enter a PR number directly.
               </div>
             )}
@@ -322,7 +322,7 @@ function SubmitForm() {
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
               placeholder="e.g. main, feature/my-branch"
-              className="w-full border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
+              className="w-full border rounded-lg px-3 py-2 bg-input border-input-border"
             />
           </div>
         )}
@@ -335,9 +335,9 @@ function SubmitForm() {
             value={repo}
             onChange={(e) => setRepo(e.target.value)}
             placeholder="Pennyw0rth/NetExec"
-            className="w-full border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
+            className="w-full border rounded-lg px-3 py-2 bg-input border-input-border"
           />
-          <p className="text-xs text-[var(--muted)] mt-1">
+          <p className="text-xs text-muted mt-1">
             Optional. Use owner/name format to test a fork. Leave empty for default repo.
           </p>
         </div>
@@ -349,9 +349,9 @@ function SubmitForm() {
             value={targetHosts}
             onChange={(e) => setTargetHosts(e.target.value)}
             placeholder="Leave empty for default"
-            className="w-full border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
+            className="w-full border rounded-lg px-3 py-2 bg-input border-input-border"
           />
-          <p className="text-xs text-[var(--muted)] mt-1">
+          <p className="text-xs text-muted mt-1">
             Single IP, comma-separated IPs, CIDR subnet, or mixed. Empty = use server default.
           </p>
         </div>
@@ -363,9 +363,9 @@ function SubmitForm() {
             value={dnsServer}
             onChange={(e) => setDnsServer(e.target.value)}
             placeholder="e.g. 192.168.33.1"
-            className="w-full border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
+            className="w-full border rounded-lg px-3 py-2 bg-input border-input-border"
           />
-          <p className="text-xs text-[var(--muted)] mt-1">
+          <p className="text-xs text-muted mt-1">
             Required for Kerberos/domain environments. Leave empty to use system default.
           </p>
         </div>
@@ -377,7 +377,7 @@ function SubmitForm() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder="Leave empty for default"
-            className="w-full border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
+            className="w-full border rounded-lg px-3 py-2 bg-input border-input-border"
           />
         </div>
 
@@ -388,7 +388,7 @@ function SubmitForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Leave empty for default"
-            className="w-full border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
+            className="w-full border rounded-lg px-3 py-2 bg-input border-input-border"
           />
         </div>
 
@@ -399,9 +399,9 @@ function SubmitForm() {
             value={lineNums}
             onChange={(e) => setLineNums(e.target.value)}
             placeholder="e.g. 5,10-15,20"
-            className="w-full border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
+            className="w-full border rounded-lg px-3 py-2 bg-input border-input-border"
           />
-          <p className="text-xs text-[var(--muted)] mt-1">
+          <p className="text-xs text-muted mt-1">
             Run only specific test lines or ranges from e2e_tests.py. Leave empty to run all tests.
           </p>
         </div>
@@ -417,14 +417,14 @@ function SubmitForm() {
                 className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                   selectedProtocols.includes(proto)
                     ? "bg-blue-600 text-white border-blue-600"
-                    : "bg-[var(--card-bg)] border-[var(--card-border)] hover:border-blue-400"
+                    : "bg-card border-card-border hover:border-blue-400"
                 }`}
               >
                 {proto.toUpperCase()}
               </button>
             ))}
           </div>
-          <p className="text-xs text-[var(--muted)] mt-1">
+          <p className="text-xs text-muted mt-1">
             Select specific protocols to test, or leave all unselected to run all tests.
           </p>
         </div>
@@ -482,7 +482,7 @@ function SubmitForm() {
               }}
               className="rounded"
             />
-            <span className={!claudeAvailable || sourceMode === "branch" ? "text-[var(--muted)]" : ""}>
+            <span className={!claudeAvailable || sourceMode === "branch" ? "text-muted" : ""}>
               AI review (Claude analyzes PR diff + test results on completion)
               {!claudeAvailable && <span className="ml-1 text-yellow-400/70">(unavailable)</span>}
               {sourceMode === "branch" && claudeAvailable && <span className="ml-1 text-yellow-400/70">(PR only)</span>}

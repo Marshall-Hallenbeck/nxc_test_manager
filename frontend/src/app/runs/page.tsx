@@ -55,7 +55,7 @@ export default function RunsPage() {
             setStatusFilter(e.target.value);
             setPage(1);
           }}
-          className="border rounded-lg px-3 py-2 bg-[var(--input-bg)] border-[var(--input-border)]"
+          className="border rounded-lg px-3 py-2 bg-input border-input-border"
         >
           <option value="">All statuses</option>
           <option value="queued">Queued</option>
@@ -67,14 +67,14 @@ export default function RunsPage() {
       </div>
 
       {loading && runs.length === 0 ? (
-        <div className="text-[var(--muted)]">Loading...</div>
+        <div className="text-muted">Loading...</div>
       ) : runs.length === 0 ? (
-        <div className="text-[var(--muted)]">No test runs found.</div>
+        <div className="text-muted">No test runs found.</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-[var(--card-border)] text-left text-sm text-[var(--muted)]">
+              <tr className="border-b border-card-border text-left text-sm text-muted">
                 <th className="py-3 pr-4">Source</th>
                 <th className="py-3 pr-4">Status</th>
                 <th className="py-3 pr-4">Targets</th>
@@ -85,7 +85,7 @@ export default function RunsPage() {
             </thead>
             <tbody>
               {runs.map((run) => (
-                <tr key={run.id} className="border-b border-[var(--card-border)] hover:bg-[var(--card-bg)]">
+                <tr key={run.id} className="border-b border-card-border hover:bg-card">
                   <td className="py-3 pr-4">
                     <Link
                       href={`/runs/${run.id}`}
@@ -94,12 +94,12 @@ export default function RunsPage() {
                       {run.pr_number ? `#${run.pr_number}` : run.branch || "—"}
                     </Link>
                     {run.pr_title && (
-                      <div className="text-sm text-[var(--muted)] truncate max-w-xs">
+                      <div className="text-sm text-muted truncate max-w-xs">
                         {run.pr_title}
                       </div>
                     )}
                     {run.repo && run.repo !== "Pennyw0rth/NetExec" && (
-                      <div className="text-xs text-[var(--muted)] truncate max-w-xs">
+                      <div className="text-xs text-muted truncate max-w-xs">
                         {run.repo}
                       </div>
                     )}
@@ -107,7 +107,7 @@ export default function RunsPage() {
                   <td className="py-3 pr-4">
                     <StatusBadge status={run.status} subStatus={run.sub_status || (run.ai_review_status === "running" ? "AI reviewing" : null)} />
                   </td>
-                  <td className="py-3 pr-4 text-sm text-[var(--muted)]">
+                  <td className="py-3 pr-4 text-sm text-muted">
                     {run.target_hosts}
                   </td>
                   <td className="py-3 pr-4 text-sm">
@@ -122,10 +122,10 @@ export default function RunsPage() {
                         )}
                       </span>
                     ) : (
-                      <span className="text-[var(--muted)]">-</span>
+                      <span className="text-muted">-</span>
                     )}
                   </td>
-                  <td className="py-3 pr-4 text-sm text-[var(--muted)]">
+                  <td className="py-3 pr-4 text-sm text-muted">
                     {new Date(run.created_at).toLocaleString()}
                   </td>
                   <td className="py-3">
@@ -150,17 +150,17 @@ export default function RunsPage() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-3 py-1 border border-[var(--card-border)] rounded disabled:opacity-50 bg-[var(--card-bg)]"
+            className="px-3 py-1 border border-card-border rounded disabled:opacity-50 bg-card"
           >
             Previous
           </button>
-          <span className="px-3 py-1 text-sm text-[var(--muted)]">
+          <span className="px-3 py-1 text-sm text-muted">
             Page {page} of {Math.ceil(total / 20)}
           </span>
           <button
             onClick={() => setPage((p) => p + 1)}
             disabled={page * 20 >= total}
-            className="px-3 py-1 border border-[var(--card-border)] rounded disabled:opacity-50 bg-[var(--card-bg)]"
+            className="px-3 py-1 border border-card-border rounded disabled:opacity-50 bg-card"
           >
             Next
           </button>

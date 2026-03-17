@@ -30,7 +30,7 @@ export default function LogViewer({ testRunId }: { testRunId: number }) {
           />
           {connected ? "Live" : done ? "Completed" : "Disconnected"}
         </div>
-        <label className="flex items-center gap-1 text-sm text-[var(--muted)]">
+        <label className="flex items-center gap-1 text-sm text-muted">
           <input
             type="checkbox"
             checked={autoScroll}

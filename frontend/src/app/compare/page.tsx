@@ -38,16 +38,16 @@ export default function ComparePage() {
           onChange={(e) => setId1(e.target.value)}
           placeholder="Run ID 1"
           required
-          className="border rounded-lg px-3 py-2 w-32 bg-[var(--input-bg)] border-[var(--input-border)]"
+          className="border rounded-lg px-3 py-2 w-32 bg-input border-input-border"
         />
-        <span className="self-center text-[var(--muted)]">vs</span>
+        <span className="self-center text-muted">vs</span>
         <input
           type="number"
           value={id2}
           onChange={(e) => setId2(e.target.value)}
           placeholder="Run ID 2"
           required
-          className="border rounded-lg px-3 py-2 w-32 bg-[var(--input-bg)] border-[var(--input-border)]"
+          className="border rounded-lg px-3 py-2 w-32 bg-input border-input-border"
         />
         <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
           Compare
@@ -59,12 +59,12 @@ export default function ComparePage() {
       {data && (
         <div className="grid grid-cols-2 gap-8">
           {[data.run1, data.run2].map((run) => (
-            <div key={run.id} className="border border-[var(--card-border)] bg-[var(--card-bg)] rounded-lg p-4">
+            <div key={run.id} className="border border-card-border bg-card rounded-lg p-4">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold">Run #{run.id} - PR #{run.pr_number}</h2>
                 <StatusBadge status={run.status} subStatus={run.sub_status || (run.ai_review_status === "running" ? "AI reviewing" : null)} />
               </div>
-              <div className="text-sm text-[var(--muted)] mb-4">{run.pr_title || "No title"}</div>
+              <div className="text-sm text-muted mb-4">{run.pr_title || "No title"}</div>
               <div className="grid grid-cols-3 gap-2 mb-4 text-center text-sm">
                 <div className="bg-green-900/30 border border-green-800 rounded p-2">
                   <div className="font-bold text-green-400">{run.passed_tests}</div>
@@ -81,7 +81,7 @@ export default function ComparePage() {
               </div>
               <div className="space-y-1">
                 {run.results.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between text-sm border-b border-[var(--card-border)] py-1">
+                  <div key={r.id} className="flex items-center justify-between text-sm border-b border-card-border py-1">
                     <span className="truncate mr-2">{r.test_name}</span>
                     <StatusBadge status={r.status} />
                   </div>
