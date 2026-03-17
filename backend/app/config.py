@@ -46,3 +46,14 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def reload_settings() -> None:
+    """Re-read .env and environment variables into the existing settings object.
+
+    Mutates in-place so all modules that imported `settings` see the update.
+    Infrastructure settings (DATABASE_URL, REDIS_URL) take effect on next restart.
+    """
+    fresh = Settings()
+    for field_name in fresh.model_fields:
+        setattr(settings, field_name, getattr(fresh, field_name))

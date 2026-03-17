@@ -1,6 +1,7 @@
 """Celery tasks for test execution."""
 import logging
 from . import celery_app
+from app.config import reload_settings
 from app.database import SessionLocal
 from app.models.test_run import TestRun, TestRunStatus
 from app.services import test_runner, notifier, docker_manager
@@ -22,6 +23,7 @@ def run_pr_test(
     """
     db = SessionLocal()
     try:
+        reload_settings()
         # Store celery task ID for cancellation
         test_run = db.get(TestRun, test_run_id)
         if not test_run:
