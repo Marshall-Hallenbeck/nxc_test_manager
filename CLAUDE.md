@@ -26,7 +26,7 @@ Frontend (Next.js :3000) ──HTTP/WS──▶ Backend (FastAPI :8000) ──�
 
 ### Stack
 - **Backend**: FastAPI, SQLAlchemy, Celery, Docker SDK for Python
-- **Frontend**: Next.js 16 (App Router), TypeScript, TailwindCSS
+- **Frontend**: Next.js 16 (App Router), TypeScript, TailwindCSS v4 (`@plugin` syntax, not `plugins: []`)
 - **Database**: PostgreSQL 17 (tables auto-created via `Base.metadata.create_all()`)
 - **Message Queue**: Redis 7 (Celery broker/backend + WebSocket pub/sub)
 - **Containers**: Docker with `--network host` for target host connectivity
@@ -40,44 +40,27 @@ Frontend (Next.js :3000) ──HTTP/WS──▶ Backend (FastAPI :8000) ──�
 
 ## Development Commands
 
-### Infrastructure
+### Docker Compose (primary)
 ```bash
-# Start PostgreSQL and Redis
-cd backend && docker-compose up -d
+# Start everything (from repo root)
+docker compose up -d
 
-# Build the test runner image
-docker build -t netexec-test-runner backend/docker/test-runner/
+# Rebuild after dependency changes (pyproject.toml or package.json)
+docker compose up -d --build backend celery-worker  # Python deps
+docker compose up -d --build frontend               # npm deps
+
+# Code changes: backend auto-reloads (uvicorn --reload), frontend auto-reloads (next dev)
+# Celery worker needs: docker compose restart celery-worker
+# .env changes: celery-worker picks up automatically (per-task reload), backend/frontend need restart
 ```
 
-### Backend
+### Local (without Docker)
 ```bash
-cd backend
-
-# Install dependencies
-poetry install
-
-# Copy and configure environment
-cp .env.example .env
-
-# Run the FastAPI server
+cd backend && poetry install && cp .env.example .env
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+celery -A app.tasks worker --loglevel=info --concurrency=3  # separate terminal
 
-# Run Celery worker (separate terminal)
-celery -A app.tasks worker --loglevel=info --concurrency=3
-```
-
-### Frontend
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
-
-# Build for production
-npm run build
+cd frontend && npm install && npm run dev
 ```
 
 ## Project Structure
@@ -187,6 +170,22 @@ Supports flexible target specification:
 - Revokes Celery task
 - Stops and removes Docker container
 - Updates database status to `cancelled`
+
+### Docker Networking
+- Backend/celery-worker reach Empire via Docker DNS: `EMPIRE_HOST=empire` (set in docker-compose.yml)
+- Ephemeral test containers use `--network host`, so they reach Empire at `127.0.0.1:1337` (hardcoded in `docker_manager.py:316`)
+- These are two different network contexts — don't unify them
+
+### Settings & Configuration
+- `config.py:settings` is a singleton — all modules import the same object
+- `reload_settings()` mutates it in-place (called at start of each Celery task)
+- Infrastructure settings (DATABASE_URL, REDIS_URL) require container restart
+- Application settings (targets, tokens, Empire, SMTP) reload per-task via `.env`
+
+### Quality Gate Notes
+- `ruff check`: pyproject.toml has unknown rule `A004` — use `ruff check --isolated` as workaround, or fix the config
+- ESLint: bracket escaping in `[id]` route paths is fragile — use `npx eslint src/` to lint all frontend files
+- Frontend build (`npm run build`) includes TypeScript checking
 
 ## React Patterns
 
