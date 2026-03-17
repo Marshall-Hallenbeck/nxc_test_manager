@@ -68,12 +68,14 @@ services:
       dockerfile: Dockerfile
       network: host
     container_name: netexec-backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     dns:
       - 192.168.8.1
       - 8.8.8.8
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/netexec_tests
       REDIS_URL: redis://redis:6379/0
+      EMPIRE_HOST: empire
     env_file:
       - path: ./backend/.env
         required: false
@@ -81,6 +83,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ~/.local/share/claude/versions:/opt/claude/versions:ro
       - ~/.claude:/root/.claude
+      - ./backend/app:/app/app
+      - ./backend/docker:/app/docker
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,11 +109,15 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/netexec_tests
       REDIS_URL: redis://redis:6379/0
+      EMPIRE_HOST: empire
     env_file:
       - path: ./backend/.env
         required: false
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./backend/app:/app/app
+      - ./backend/docker:/app/docker
+      - ./backend/.env:/app/.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,10 +130,16 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ""
-        NEXT_PUBLIC_WS_URL: ""
+      target: deps
     container_name: netexec-frontend
+    command: npx next dev --hostname 0.0.0.0 --port 3000
+    environment:
+      NEXT_PUBLIC_API_URL: ""
+      NEXT_PUBLIC_WS_URL: ""
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
     depends_on:
       backend:
         condition: service_healthy
