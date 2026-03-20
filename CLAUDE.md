@@ -63,6 +63,15 @@ celery -A app.tasks worker --loglevel=info --concurrency=3  # separate terminal
 cd frontend && npm install && npm run dev
 ```
 
+### Testing
+```bash
+# Backend (from repo root or backend/)
+cd backend && poetry run pytest tests/
+
+# Frontend (from repo root or frontend/)
+cd frontend && npx vitest run
+```
+
 ## Project Structure
 
 ```
@@ -84,6 +93,8 @@ backend/
 │   ├── services/
 │   │   ├── github.py            # GitHub API (PR details via httpx)
 │   │   ├── docker_manager.py    # Container lifecycle (Docker SDK)
+│   │   ├── ai_review.py         # AI review via Claude CLI
+│   │   ├── empire.py            # Empire C2 API client
 │   │   ├── test_runner.py       # Test orchestration (IP/CIDR expansion)
 │   │   └── notifier.py          # SMTP email notifications
 │   └── tasks/
@@ -108,9 +119,12 @@ frontend/
 │   │   └── compare/page.tsx     # Side-by-side run comparison
 │   ├── components/
 │   │   ├── StatusBadge.tsx      # Color-coded status badges
+│   │   ├── ThemeProvider.tsx    # next-themes dark/light mode provider
+│   │   ├── ThemeToggle.tsx      # Dark/light mode toggle button
 │   │   └── LogViewer.tsx        # Terminal-style log viewer (WebSocket)
 │   ├── lib/
 │   │   ├── api.ts               # API client (all backend endpoints)
+│   │   ├── claude.ts            # useClaudeAvailability hook
 │   │   └── websocket.ts         # useTestRunLogs React hook
 │   └── types/index.ts           # TypeScript interfaces
 ├── package.json
@@ -130,6 +144,10 @@ frontend/
 
 ### WebSocket
 - `WS /ws/test-runs/{id}/logs` — Real-time log streaming
+
+### AI Review
+- `POST /{id}/review` — trigger AI review for a completed run
+- `GET /{id}/review/available` — check if Claude CLI is on PATH
 
 ### Webhooks
 - `POST /webhooks/github` — GitHub PR event receiver (HMAC-SHA256 validated)
@@ -183,9 +201,23 @@ Supports flexible target specification:
 - Application settings (targets, tokens, Empire, SMTP) reload per-task via `.env`
 
 ### Quality Gate Notes
-- `ruff check`: pyproject.toml has unknown rule `A004` — use `ruff check --isolated` as workaround, or fix the config
+- `ruff check`: run from `backend/` directory (config is in `pyproject.toml`)
 - ESLint: bracket escaping in `[id]` route paths is fragile — use `npx eslint src/` to lint all frontend files
 - Frontend build (`npm run build`) includes TypeScript checking
+
+### AI Review
+- Optional per-run feature: user checks "AI Review" when submitting
+- `ai_review.py` shells out to the `claude` CLI (finds it on PATH)
+- Stores result in `TestRun.ai_summary` / `TestRun.ai_review_status`
+- Frontend renders via `react-markdown` + `@tailwindcss/typography`
+- `frontend/src/lib/claude.ts` — `useClaudeAvailability` hook
+
+### TailwindCSS v4 Theming
+Colors are defined in three layers in `globals.css`:
+1. CSS variables in `:root` / `.dark` (e.g. `--card-bg`, `--accent`)
+2. `@theme inline` block maps them to Tailwind tokens (e.g. `--color-card: var(--card-bg)`)
+3. Components use Tailwind classes (e.g. `bg-card`, `text-muted`, `border-input-border`)
+Never use `bg-[var(--*)]` — always define a theme token.
 
 ## React Patterns
 
