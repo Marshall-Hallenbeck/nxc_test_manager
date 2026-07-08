@@ -11,7 +11,7 @@ const levelColors: Record<string, string> = {
 };
 
 export default function LogViewer({ testRunId }: { testRunId: number }) {
-  const { logs, status, connected, done } = useTestRunLogs(testRunId);
+  const { logs, connected, done } = useTestRunLogs(testRunId);
   const [autoScroll, setAutoScroll] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 

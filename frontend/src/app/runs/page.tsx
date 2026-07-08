@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
@@ -13,7 +13,7 @@ export default function RunsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
 
-  async function loadRuns() {
+  const loadRuns = useCallback(async () => {
     setLoading(true);
     try {
       const data = (await api.listTestRuns({
@@ -27,13 +27,13 @@ export default function RunsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [page, statusFilter]);
 
   useEffect(() => {
     loadRuns();
     const interval = setInterval(loadRuns, 5000);
     return () => clearInterval(interval);
-  }, [page, statusFilter]);
+  }, [loadRuns]);
 
   async function handleCancel(id: number) {
     if (!confirm("Cancel this test run?")) return;

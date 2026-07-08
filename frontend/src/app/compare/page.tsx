@@ -61,7 +61,7 @@ export default function ComparePage() {
           {[data.run1, data.run2].map((run) => (
             <div key={run.id} className="border border-card-border bg-card rounded-lg p-4">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold">Run #{run.id} - PR #{run.pr_number}</h2>
+                <h2 className="text-xl font-semibold">Run #{run.id} - {run.pr_number ? `PR #${run.pr_number}` : run.branch || "Unknown"}</h2>
                 <StatusBadge status={run.status} subStatus={run.sub_status || (run.ai_review_status === "running" ? "AI reviewing" : null)} />
               </div>
               <div className="text-sm text-muted mb-4">{run.pr_title || "No title"}</div>

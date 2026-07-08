@@ -71,6 +71,10 @@ export const api = {
     return fetchAPI(`/api/runs/compare?run1=${run1}&run2=${run2}`);
   },
 
+  rerunTestRun(id: number) {
+    return fetchAPI<{ id: number }>(`/api/runs/${id}/rerun`, { method: "POST" });
+  },
+
   reviewTestRun(id: number) {
     return fetchAPI<{ status: string }>(`/api/runs/${id}/review`, { method: "POST" });
   },

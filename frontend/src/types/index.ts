@@ -7,7 +7,6 @@ export interface TestRun {
   commit_sha: string | null;
   target_hosts: string;
   target_username: string | null;
-  target_password: string | null;
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
   sub_status: string | null;
   created_at: string;

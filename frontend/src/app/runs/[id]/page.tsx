@@ -121,30 +121,34 @@ export default function TestRunDetailPage() {
     }
   }
 
-  function handleRerun() {
+  async function handleRerun() {
     if (!run) return;
-    const params = new URLSearchParams();
-    if (run.pr_number) params.set("pr_number", String(run.pr_number));
-    if (run.branch) params.set("branch", run.branch);
-    if (run.repo) params.set("repo", run.repo);
-    if (run.target_hosts) params.set("target_hosts", run.target_hosts);
-    if (run.target_username) params.set("target_username", run.target_username);
-    if (run.target_password) params.set("target_password", run.target_password);
-    if (run.protocols) params.set("protocols", run.protocols);
-    if (run.kerberos) params.set("kerberos", "true");
-    if (run.verbose) params.set("verbose", "true");
-    if (run.show_errors) params.set("show_errors", "true");
-    if (run.ai_review_enabled) params.set("ai_review", "true");
-    if (run.line_nums) params.set("line_nums", run.line_nums);
-    if (run.not_tested) params.set("not_tested", "true");
-    if (run.dns_server) params.set("dns_server", run.dns_server);
-    router.push(`/?${params.toString()}`);
+    try {
+      const newRun = await api.rerunTestRun(id);
+      router.push(`/runs/${newRun.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to re-run");
+    }
   }
 
   if (error) return <div className="text-red-500">{error}</div>;
   if (!run) return <div className="text-muted">Loading...</div>;
 
   const isActive = run.status === "queued" || run.status === "running";
+
+  const reviewUnavailableReason = !claudeAvailable
+    ? claudeUnavailableReason
+    : !run.pr_number
+    ? "AI review requires a PR (not available for branch runs)"
+    : null;
+
+  const reviewButtonLabel = !claudeAvailable
+    ? "Review Unavailable"
+    : !run.pr_number
+    ? "Review (PR only)"
+    : run.ai_review_status === "running"
+    ? "Reviewing..."
+    : "Review with Claude";
 
   return (
     <div>
@@ -176,11 +180,11 @@ export default function TestRunDetailPage() {
             <>
               <button
                 onClick={handleReview}
-                disabled={!claudeAvailable || reviewRequesting || run.ai_review_status === "running"}
-                title={!claudeAvailable ? claudeUnavailableReason : undefined}
+                disabled={!!reviewUnavailableReason || reviewRequesting || run.ai_review_status === "running"}
+                title={reviewUnavailableReason ?? undefined}
                 className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50"
               >
-                {!claudeAvailable ? "Review Unavailable" : run.ai_review_status === "running" ? "Reviewing..." : "Review with Claude"}
+                {reviewButtonLabel}
               </button>
               <button
                 onClick={handleRerun}

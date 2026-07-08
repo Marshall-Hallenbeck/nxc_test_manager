@@ -80,9 +80,6 @@ function SubmitForm() {
     const user = searchParams.get("target_username");
     if (user) setUsername(user);
 
-    const pass = searchParams.get("target_password");
-    if (pass) setPassword(pass);
-
     const protocols = searchParams.get("protocols");
     if (protocols) setSelectedProtocols(protocols.split(",").filter(Boolean));
 
@@ -98,7 +95,7 @@ function SubmitForm() {
 
     const dnsServerParam = searchParams.get("dns_server");
     if (dnsServerParam) setDnsServer(dnsServerParam);
-  }, []);
+  }, [searchParams]);
 
   function toggleProtocol(proto: string) {
     setSelectedProtocols((prev) =>

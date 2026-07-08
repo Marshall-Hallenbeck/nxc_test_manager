@@ -16,16 +16,17 @@ const ThemeContext = createContext<ThemeContextType>({
   mounted: false,
 });
 
+function getStoredTheme(): Theme {
+  if (typeof window === "undefined") return "dark";
+  const saved = localStorage.getItem("theme");
+  return saved === "light" || saved === "dark" ? saved : "dark";
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>(getStoredTheme);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Check localStorage for saved preference, default to dark
-    const saved = localStorage.getItem("theme") as Theme | null;
-    if (saved === "light" || saved === "dark") {
-      setTheme(saved);
-    }
     setMounted(true);
   }, []);
 

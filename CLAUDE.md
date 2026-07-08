@@ -138,6 +138,7 @@ frontend/
 - `GET /` — List runs (query: page, status filter)
 - `GET /{id}` — Run detail with results
 - `POST /{id}/cancel` — Cancel queued/running run
+- `POST /{id}/rerun` — Clone a run with same settings (password stays server-side)
 - `DELETE /{id}` — Delete completed/cancelled run
 - `GET /{id}/logs` — Fetch log entries (query: after timestamp)
 - `GET /compare` — Compare two runs (query: run1, run2)
@@ -169,7 +170,8 @@ All config via environment variables (see `backend/.env.example`):
 ## Important Notes
 
 ### Security
-- Passwords are NEVER stored in the database
+- Passwords are stored in the database for re-run convenience (trusted network only)
+- Passwords are never exposed in API responses or URL parameters
 - Credentials are passed as environment variables to ephemeral containers
 - Web UI has no authentication (intended for trusted network use only)
 - `.env` file should have restricted permissions (`chmod 600`)
