@@ -129,7 +129,7 @@ def parse_test_output(output: str) -> dict:
     return {"results": results, "summary": summary}
 
 
-def run_test(db: Session, test_run_id: int, target_password: str) -> None:
+def run_test(db: Session, test_run_id: int, target_password: str | None) -> None:
     """Execute a full test run.
 
     Args:
@@ -159,6 +159,7 @@ def run_test(db: Session, test_run_id: int, target_password: str) -> None:
             test_run.commit_sha = pr_info["head_sha"]
         else:
             # Branch mode: fetch branch details
+            assert test_run.branch is not None  # schema enforces: branch required when pr_number is None
             branch_info = github.get_branch_details(test_run.branch, repo=repo)
             test_run.pr_title = f"{test_run.branch} @ {repo}"
             test_run.commit_sha = branch_info["head_sha"]

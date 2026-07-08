@@ -6,14 +6,15 @@ import logging
 import re
 import tempfile
 from pathlib import Path
+from docker.errors import ImageNotFound, NotFound
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 # Regex to strip ANSI escape sequences
-ANSI_ESCAPE = re.compile(r'\x1b\[[\x20-\x3f]*[\x40-\x7e]|\x1b\][^\x07]*\x07|\r')
+ANSI_ESCAPE = re.compile(r"\x1b\[[\x20-\x3f]*[\x40-\x7e]|\x1b\][^\x07]*\x07|\r")
 # Strip rich's right-aligned source path (e.g. "          e2e_tests.py:137")
-RICH_SOURCE_PATH = re.compile(r'\s{10,}\S+:\d+\s*$')
+RICH_SOURCE_PATH = re.compile(r"\s{10,}\S+:\d+\s*$")
 
 DOCKER_IMAGE_NAME = "netexec-test-runner"
 DOCKERFILE_DIR = str(Path(__file__).resolve().parent.parent.parent / "docker" / "test-runner")
@@ -33,7 +34,7 @@ def ensure_image_built() -> None:
     try:
         client.images.get(DOCKER_IMAGE_NAME)
         logger.info(f"Image {DOCKER_IMAGE_NAME} already exists")
-    except docker.errors.ImageNotFound:
+    except ImageNotFound:
         logger.info(f"Building image {DOCKER_IMAGE_NAME} from {DOCKERFILE_DIR}")
         client.images.build(path=DOCKERFILE_DIR, tag=DOCKER_IMAGE_NAME, rm=True)
         logger.info(f"Image {DOCKER_IMAGE_NAME} built successfully")
@@ -75,10 +76,8 @@ def get_poetry_lock_hash(
         return _poetry_lock_cache[cache_key]
 
     try:
-        if pr_number:
-            url = f"https://raw.githubusercontent.com/{repo}/refs/pull/{pr_number}/head/poetry.lock"
-        else:
-            url = f"https://raw.githubusercontent.com/{repo}/refs/heads/{branch}/poetry.lock"
+        ref = f"refs/pull/{pr_number}/head" if pr_number else f"refs/heads/{branch}"
+        url = f"https://raw.githubusercontent.com/{repo}/{ref}/poetry.lock"
         resp = httpx.get(url, timeout=30, follow_redirects=True)
         if resp.status_code == 200:
             hash_val = hashlib.sha256(resp.content).hexdigest()[:16]
@@ -114,7 +113,7 @@ def source_image_exists(
     try:
         client.images.get(get_source_image_name(pr_number, branch, repo))
         return True
-    except docker.errors.ImageNotFound:
+    except ImageNotFound:
         return False
 
 
@@ -133,16 +132,17 @@ def build_source_image(
     if log_callback:
         log_callback(f"Building image for {label} with updated dependencies...")
 
-    if pr_number:
-        fetch_cmd = (
+    fetch_cmd = (
+        (
             f"git fetch --depth 1 origin pull/{pr_number}/head:pr-{pr_number} && "
             f"git checkout -q pr-{pr_number}"
         )
-    else:
-        fetch_cmd = (
+        if pr_number
+        else (
             f"git fetch --depth 1 origin {branch} && "
             f"git checkout -q FETCH_HEAD"
         )
+    )
 
     dockerfile_content = f"""
 FROM {DOCKER_IMAGE_NAME}:latest
@@ -175,20 +175,22 @@ RUN cp poetry.lock /poetry.lock.base
             dockerfile_path.write_text(dockerfile_content)
 
             logger.info(f"Building source-specific image: {image_tag}")
-            image, build_logs = client.images.build(
+            resp = client.api.build(
                 path=tmpdir,
                 tag=image_tag,
                 rm=True,
                 pull=False,
                 network_mode="host",
+                decode=True,
             )
 
-            if log_callback:
-                for log in build_logs:
-                    if "stream" in log:
-                        line = log["stream"].strip()
-                        if line:
-                            log_callback(line)
+            for chunk in resp:
+                if "error" in chunk:
+                    raise RuntimeError(chunk["error"])
+                if log_callback and "stream" in chunk:
+                    line = chunk["stream"].strip()
+                    if line:
+                        log_callback(line)
 
             logger.info(f"Successfully built {image_tag}")
             return True
@@ -332,7 +334,8 @@ def run_test_container(
         remove=False,  # We remove manually after collecting logs
     )
 
-    container_id = container.id
+    assert container.id is not None, "Docker did not assign a container ID"
+    container_id: str = container.id
     logger.info(f"Started container {container_id[:12]} for {label} using {image_name}")
 
     # Stream logs - buffer chunks and split on actual newlines
@@ -381,7 +384,7 @@ def stop_container(container_id: str) -> bool:
         container.remove(force=True)
         logger.info(f"Stopped and removed container {container_id[:12]}")
         return True
-    except docker.errors.NotFound:
+    except NotFound:
         logger.warning(f"Container {container_id[:12]} not found")
         return False
     except Exception as e:
@@ -402,15 +405,18 @@ def cleanup_pr_images(keep_recent: int = 10) -> int:
         images = client.images.list(name=DOCKER_IMAGE_NAME)
         source_images = []
 
+        latest_tag = f"{DOCKER_IMAGE_NAME}:latest"
         for img in images:
-            for tag in img.tags:
-                if ":" in tag and tag != f"{DOCKER_IMAGE_NAME}:latest":
-                    source_images.append((img, tag))
+            source_images.extend(
+                (img, tag)
+                for tag in img.tags
+                if ":" in tag and tag != latest_tag
+            )
 
         # Sort by creation date (newest first) and remove old ones
         source_images.sort(key=lambda x: x[0].attrs.get("Created", ""), reverse=True)
 
-        for _img, tag in source_images[keep_recent:]:
+        for _, tag in source_images[keep_recent:]:
             try:
                 client.images.remove(tag, force=True)
                 logger.info(f"Removed old image: {tag}")

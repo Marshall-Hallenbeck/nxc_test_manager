@@ -66,7 +66,6 @@ class TestRunOut(BaseModel):
     commit_sha: str | None
     target_hosts: str
     target_username: str | None
-    target_password: str | None
     protocols: str | None
     kerberos: bool
     verbose: bool

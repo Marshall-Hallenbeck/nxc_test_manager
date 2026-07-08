@@ -42,16 +42,12 @@ def create_test_run(data: TestRunCreate, db: Session = Depends(get_db)):
         line_nums=data.line_nums,
         not_tested=1 if data.not_tested else 0,
         dns_server=data.dns_server,
-        status=TestRunStatus.QUEUED,
-        total_tests=0,
-        passed_tests=0,
-        failed_tests=0,
     )
     db.add(test_run)
     db.commit()
     db.refresh(test_run)
 
-    run_pr_test.delay(
+    run_pr_test.delay(  # type: ignore[union-attr]
         test_run_id=test_run.id,
         target_password=password,
     )
@@ -86,7 +82,23 @@ def list_test_runs(
         .all()
     )
 
-    return TestRunListOut(items=items, total=total, page=page, per_page=per_page)
+    return TestRunListOut(items=items, total=total, page=page, per_page=per_page)  # type: ignore[arg-type]
+
+
+@router.get("/compare")
+def compare_test_runs(
+    run1: int = Query(...),
+    run2: int = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Compare two test runs."""
+    tr1 = db.get(TestRun, run1)
+    tr2 = db.get(TestRun, run2)
+
+    if not tr1 or not tr2:
+        raise HTTPException(status_code=404, detail="One or both test runs not found")
+
+    return CompareOut(run1=tr1, run2=tr2)
 
 
 @router.get("/{test_run_id}", response_model=TestRunDetail)
@@ -152,6 +164,9 @@ def review_test_run(test_run_id: int, db: Session = Depends(get_db)):
     if not test_run:
         raise HTTPException(status_code=404, detail="Test run not found")
 
+    if test_run.pr_number is None:
+        raise HTTPException(status_code=400, detail="AI review requires a PR number (not available for branch runs)")
+
     if test_run.ai_review_status == "running":
         raise HTTPException(status_code=409, detail="Review already in progress")
 
@@ -210,17 +225,23 @@ def review_test_run(test_run_id: int, db: Session = Depends(get_db)):
     return {"status": "running"}
 
 
-@router.get("/compare")
-def compare_test_runs(
-    run1: int = Query(...),
-    run2: int = Query(...),
-    db: Session = Depends(get_db),
-):
-    """Compare two test runs."""
-    tr1 = db.get(TestRun, run1)
-    tr2 = db.get(TestRun, run2)
+@router.post("/{test_run_id}/rerun", response_model=TestRunOut)
+def rerun_test(test_run_id: int, db: Session = Depends(get_db)):
+    """Create a new test run cloning all settings from an existing run."""
+    original = db.get(TestRun, test_run_id)
+    if not original:
+        raise HTTPException(status_code=404, detail="Test run not found")
 
-    if not tr1 or not tr2:
-        raise HTTPException(status_code=404, detail="One or both test runs not found")
+    test_run = original.clone()
+    if not test_run.target_password:
+        test_run.target_password = settings.default_target_password
+    db.add(test_run)
+    db.commit()
+    db.refresh(test_run)
 
-    return CompareOut(run1=tr1, run2=tr2)
+    run_pr_test.delay(  # type: ignore[union-attr]
+        test_run_id=test_run.id,
+        target_password=test_run.target_password,
+    )
+
+    return test_run

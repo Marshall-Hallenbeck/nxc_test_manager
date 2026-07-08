@@ -71,7 +71,7 @@ async def github_webhook(request: Request):
         db.commit()
         db.refresh(test_run)
 
-        run_pr_test.delay(test_run_id=test_run.id, target_password=None)
+        run_pr_test.delay(test_run_id=test_run.id, target_password=None)  # type: ignore[union-attr]
         logger.info(f"Auto-queued test for PR #{pr_number} via webhook ({action})")
 
         return {"status": "queued", "test_run_id": test_run.id, "pr_number": pr_number}

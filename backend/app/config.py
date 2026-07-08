@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]
 
 
 def reload_settings() -> None:
@@ -54,6 +54,6 @@ def reload_settings() -> None:
     Mutates in-place so all modules that imported `settings` see the update.
     Infrastructure settings (DATABASE_URL, REDIS_URL) take effect on next restart.
     """
-    fresh = Settings()
-    for field_name in fresh.model_fields:
+    fresh = Settings()  # type: ignore[call-arg]
+    for field_name in Settings.model_fields:
         setattr(settings, field_name, getattr(fresh, field_name))

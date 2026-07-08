@@ -128,7 +128,7 @@ def build_prompt(
                     output += "\n  ... [output truncated]"
                 results_text += f"\n  Output:\n{output}"
 
-    prompt = f"""You are reviewing a pull request for NetExec (a network execution tool used for penetration testing) and its end-to-end test results.
+    return f"""You are reviewing a pull request for NetExec (a network execution tool used for penetration testing) and its end-to-end test results.
 
 ## PR #{pr_number}: {pr_title or 'No title'}
 
@@ -159,8 +159,6 @@ Please provide a concise review covering:
 
 Keep the review concise and actionable. Use markdown formatting."""
 
-    return prompt
-
 
 def generate_review(
     pr_number: int,
@@ -176,7 +174,7 @@ def generate_review(
     try:
         diff = github.get_pr_diff(pr_number)
     except Exception as e:
-        raise RuntimeError(f"Cannot generate review without PR diff: {e}")
+        raise RuntimeError(f"Cannot generate review without PR diff: {e}") from e
 
     if not diff or not diff.strip():
         raise RuntimeError("Cannot generate review: PR diff is empty")
@@ -196,10 +194,10 @@ def generate_review(
             timeout=120,
             env=env,
         )
-    except FileNotFoundError:
-        raise RuntimeError("Claude CLI not found. Install Claude Code: https://claude.ai/code")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("Claude CLI timed out after 120 seconds")
+    except FileNotFoundError as e:
+        raise RuntimeError("Claude CLI not found. Install Claude Code: https://claude.ai/code") from e
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError("Claude CLI timed out after 120 seconds") from e
 
     if result.returncode != 0:
         stderr = result.stderr.strip()
