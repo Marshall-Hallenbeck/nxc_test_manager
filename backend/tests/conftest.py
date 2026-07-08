@@ -4,11 +4,11 @@ import os
 # Override database URL BEFORE any app imports
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 
-import pytest  # noqa: E402
-from sqlalchemy import create_engine, event  # noqa: E402
-from sqlalchemy.orm import sessionmaker  # noqa: E402
-from app.database import Base, get_db  # noqa: E402
-from app.main import app  # noqa: E402
+import pytest
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+from app.database import Base, get_db
+from app.main import app
 
 
 engine = create_engine("sqlite:///./test.db", connect_args={"check_same_thread": False})

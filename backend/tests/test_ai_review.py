@@ -1,9 +1,7 @@
 """Tests for AI review service — Claude CLI probe, prompt building, and review endpoint guard."""
-import json
 import subprocess
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
 
 from app.services import ai_review
 
@@ -86,11 +84,13 @@ class TestBuildEnv:
 
     @patch("os.path.exists", return_value=True)
     def test_sets_home_for_docker(self, mock_exists):
+        assert mock_exists.return_value is True
         env = ai_review.build_env()
         assert env["HOME"] == "/root"
 
     @patch("os.path.exists", return_value=False)
     def test_preserves_home_outside_docker(self, mock_exists):
+        assert mock_exists.return_value is False
         import os
         env = ai_review.build_env()
         assert env["HOME"] == os.environ.get("HOME", "")
@@ -178,6 +178,7 @@ class TestReviewEndpointGuard:
     def test_review_returns_503_when_unavailable(self, mock_task, client, db):
         resp = client.post("/api/runs", json={"pr_number": 123})
         run_id = resp.json()["id"]
+        mock_task.delay.assert_called_once()
 
         from app.models.test_run import TestRun, TestRunStatus
         test_run = db.get(TestRun, run_id)
@@ -197,6 +198,27 @@ class TestReviewEndpointGuard:
     def test_review_allowed_when_available(self, mock_task, mock_review, client, db):
         resp = client.post("/api/runs", json={"pr_number": 123})
         run_id = resp.json()["id"]
+        mock_task.delay.assert_called_once()
+
+        from app.models.test_run import TestRun, TestRunStatus
+        test_run = db.get(TestRun, run_id)
+        test_run.status = TestRunStatus.COMPLETED
+        db.commit()
+
+        ai_review.CLAUDE_AVAILABLE = True
+        ai_review.CLAUDE_UNAVAILABLE_REASON = ""
+        assert mock_review.return_value == "Review text"
+
+        resp = client.post(f"/api/runs/{run_id}/review")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "running"
+
+    @patch("app.api.test_runs.run_pr_test")
+    def test_review_branch_run_returns_400_regression(self, mock_task, client, db):
+        """Branch-only runs (no pr_number) must return 400 — generate_review requires a PR number."""
+        resp = client.post("/api/runs", json={"branch": "my-feature", "repo": "user/repo"})
+        run_id = resp.json()["id"]
+        mock_task.delay.assert_called_once()
 
         from app.models.test_run import TestRun, TestRunStatus
         test_run = db.get(TestRun, run_id)
@@ -207,5 +229,5 @@ class TestReviewEndpointGuard:
         ai_review.CLAUDE_UNAVAILABLE_REASON = ""
 
         resp = client.post(f"/api/runs/{run_id}/review")
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "running"
+        assert resp.status_code == 400
+        assert "PR number" in resp.json()["detail"]
