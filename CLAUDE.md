@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 End-to-end testing manager for [NetExec](https://github.com/Pennyw0rth/NetExec/). Automates testing of NetExec pull requests against real Active Directory/Windows environments via ephemeral Docker containers.
 
 **Core Workflow:**
-1. User submits a PR number via the web UI
+1. User submits a PR number (or branch name + repo) via the web UI
 2. Backend fetches PR metadata from GitHub API
 3. Celery task spins up an ephemeral Docker container
 4. Container clones NetExec, checks out the PR, installs via Poetry
@@ -33,7 +33,7 @@ Frontend (Next.js :3000) ──HTTP/WS──▶ Backend (FastAPI :8000) ──�
 
 ### Key Design Decisions
 - No Alembic migrations — tables auto-created on startup
-- Passwords never stored in database — passed ephemerally to containers
+- Passwords stored in DB for re-run convenience; never exposed in API responses
 - Infinite scaling via Celery worker pool (no queue limits)
 - WebSocket logs use DB polling (simpler than Redis pub/sub for this use case)
 - GitHub webhooks disabled by default (configurable via env vars)
@@ -104,7 +104,7 @@ backend/
 │   └── test-runner/
 │       ├── Dockerfile           # Python 3.12-slim + Poetry + git
 │       └── run_tests.sh         # Clone PR, poetry install, run tests
-├── docker-compose.yml           # PostgreSQL 16 + Redis 7
+├── docker-compose.yml           # PostgreSQL 17 + Redis 7
 ├── .env.example                 # Configuration template
 └── pyproject.toml               # Python dependencies
 
@@ -193,7 +193,7 @@ Supports flexible target specification:
 
 ### Docker Networking
 - Backend/celery-worker reach Empire via Docker DNS: `EMPIRE_HOST=empire` (set in docker-compose.yml)
-- Ephemeral test containers use `--network host`, so they reach Empire at `127.0.0.1:1337` (hardcoded in `docker_manager.py:316`)
+- Ephemeral test containers use `--network host`, so they reach Empire at `127.0.0.1:1337` (hardcoded in `docker_manager.py:318`)
 - These are two different network contexts — don't unify them
 
 ### Settings & Configuration
@@ -204,11 +204,13 @@ Supports flexible target specification:
 
 ### Quality Gate Notes
 - `ruff check`: run from `backend/` directory (config is in `pyproject.toml`)
+- `pyright`: run from `backend/` directory — `poetry run pyright`
 - ESLint: bracket escaping in `[id]` route paths is fragile — use `npx eslint src/` to lint all frontend files
 - Frontend build (`npm run build`) includes TypeScript checking
 
 ### AI Review
 - Optional per-run feature: user checks "AI Review" when submitting
+- `POST /{id}/review` requires a PR number — branch-only runs return 400
 - `ai_review.py` shells out to the `claude` CLI (finds it on PATH)
 - Stores result in `TestRun.ai_summary` / `TestRun.ai_review_status`
 - Frontend renders via `react-markdown` + `@tailwindcss/typography`
