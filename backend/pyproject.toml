@@ -1,13 +1,17 @@
-[tool.poetry]
+[project]
 name = "netexec-test-manager"
 version = "0.1.0"
 description = "End-to-end testing manager for NetExec pull requests"
-authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
+authors = [{name = "Marshall Hallenbeck", email = "marshall.hallenbeck@gmail.com"}]
+requires-python = ">=3.12,<4.0"
+dynamic = ["dependencies"]
+
+[tool.poetry]
+package-mode = false
 
 [tool.poetry.dependencies]
-python = "^3.12"
-fastapi = "^0.128.0"
+fastapi = "^0.141.1"
 uvicorn = {extras = ["standard"], version = "^0.40.0"}
 sqlalchemy = "^2.0.46"
 psycopg2-binary = "^2.9.11"
@@ -17,8 +21,9 @@ redis = "^7.1.0"
 celery = "^5.6.0"
 docker = "^7.1.0"
 httpx = "^0.28.0"
-python-multipart = "^0.0.22"
+python-multipart = "^0.0.26"
 websockets = "^16.0"
+fastmcp = "^3.4.6"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.0"

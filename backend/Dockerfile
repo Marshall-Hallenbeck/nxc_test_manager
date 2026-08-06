@@ -5,11 +5,14 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install poetry
+RUN pip install poetry==2.3.2
 
 WORKDIR /app
 
-COPY pyproject.toml poetry.lock* ./
+# No glob on poetry.lock: a missing lock file must fail the build, not silently
+# resolve fresh versions that drift from the local environment. `poetry install`
+# also refuses a lock file that is stale relative to pyproject.toml.
+COPY pyproject.toml poetry.lock ./
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root
 
