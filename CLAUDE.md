@@ -80,6 +80,7 @@ backend/
 │   ├── main.py                  # FastAPI app with lifespan hook (table creation)
 │   ├── config.py                # Pydantic Settings from .env
 │   ├── database.py              # SQLAlchemy engine, session, init_db()
+│   ├── mcp_server.py            # MCP tools generated from the FastAPI routes
 │   ├── api/
 │   │   ├── test_runs.py         # REST endpoints (CRUD, cancel, compare, logs)
 │   │   ├── websocket.py         # WS /ws/test-runs/{id}/logs (DB polling)
@@ -153,6 +154,9 @@ frontend/
 ### Webhooks
 - `POST /webhooks/github` — GitHub PR event receiver (HMAC-SHA256 validated)
 
+### MCP
+- `POST /mcp/` — MCP streamable HTTP endpoint (see MCP Server below)
+
 ## Configuration
 
 All config via environment variables (see `backend/.env.example`):
@@ -215,6 +219,39 @@ Supports flexible target specification:
 - Stores result in `TestRun.ai_summary` / `TestRun.ai_review_status`
 - Frontend renders via `react-markdown` + `@tailwindcss/typography`
 - `frontend/src/lib/claude.ts` — `useClaudeAvailability` hook
+
+### MCP Server
+Lets an AI coding agent working in the NetExec repo drive this manager. Registered
+with `claude mcp add --scope user --transport http nxc-test-manager http://localhost:9000/mcp/`.
+
+- `mcp_server.py:build_mcp` calls `FastMCP.from_fastapi(app)`, so the REST API is the
+  single source of truth — a new route becomes a tool with no extra code
+- `build_mcp(app)` runs at the bottom of `main.py`, **after every `include_router` call**.
+  Routes added later will not appear as tools
+- `ROUTE_MAPS` excludes `DELETE /{id}`, `/webhooks/*`, `/`, and `/health`
+- **Every route in `api/test_runs.py` sets an explicit `operation_id`** — that string is
+  the agent-facing tool name. Without it FastAPI generates one from handler name + path +
+  method (`create_test_run_api_runs_post`), so renaming a handler would rename the tool.
+  A new route with no `operation_id` gets an unusable generated name;
+  `tests/test_mcp_server.py` fails the build for both cases
+- `wait_for_test_run` is hand-written, not generated. It polls the DB in a thread and
+  raises on timeout rather than returning a non-terminal status
+- The MCP session lifespan is chained inside `main.py:lifespan` via
+  `async with mcp_app.lifespan(app)`. Without it the mount returns session errors
+- nginx needs `proxy_buffering off` on `/mcp` — responses are SSE streams
+- FastMCP 3 requires `starlette>=1.0.1`, which forces `fastapi>=0.133`
+
+### Dependency Pinning
+- `backend/Dockerfile` copies `poetry.lock` with **no glob**. A missing lock file fails the
+  build instead of resolving fresh versions that drift from the local venv. Poetry itself
+  rejects a lock that is stale relative to `pyproject.toml`, so no extra check is needed.
+- Poetry is pinned in the image (`pip install poetry==2.3.2`) so resolver behaviour cannot
+  change between builds.
+- Project metadata lives in `[project]` (PEP 621) with `dynamic = ["dependencies"]`;
+  dependencies stay in `[tool.poetry.dependencies]`. `package-mode = false` — this is an
+  application, not a library. `poetry check` must report "All set!" with no warnings.
+- If `poetry lock` exits 139 with no output, the keyring backend segfaulted. Fixed on this
+  machine with `poetry config keyring.enabled false`.
 
 ### TailwindCSS v4 Theming
 Colors are defined in three layers in `globals.css`:
