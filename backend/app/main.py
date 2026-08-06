@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db
 from .api import test_runs, websocket, webhooks
+from .mcp_server import build_mcp
 from .services import ai_review
 
 
@@ -11,7 +12,10 @@ from .services import ai_review
 async def lifespan(app: FastAPI):
     init_db()
     ai_review.check_claude_available()
-    yield
+    # mcp_app is defined below; it exists by the time startup runs. Its lifespan
+    # manages MCP session state and must run for the /mcp mount to work.
+    async with mcp_app.lifespan(app):
+        yield
 
 
 app = FastAPI(
@@ -46,3 +50,8 @@ async def health():
 app.include_router(test_runs.router, prefix="/api/runs", tags=["runs"])
 app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+
+# Built from the routes above, so it must come after every include_router call.
+mcp = build_mcp(app)
+mcp_app = mcp.http_app(path="/")
+app.mount("/mcp", mcp_app)

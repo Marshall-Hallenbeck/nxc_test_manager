@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/prs")
+@router.get("/prs", operation_id="search_pull_requests")
 def search_prs(q: str = Query("")):
     """Search open PRs in the NetExec repo by number or title."""
     return github.search_open_prs(q)
 
 
-@router.post("", response_model=TestRunOut)
+@router.post("", response_model=TestRunOut, operation_id="start_test_run")
 def create_test_run(data: TestRunCreate, db: Session = Depends(get_db)):
     """Submit a new test run for a PR."""
     password = data.target_password or settings.default_target_password
@@ -55,7 +55,7 @@ def create_test_run(data: TestRunCreate, db: Session = Depends(get_db)):
     return test_run
 
 
-@router.get("", response_model=TestRunListOut)
+@router.get("", response_model=TestRunListOut, operation_id="list_test_runs")
 def list_test_runs(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
@@ -85,7 +85,7 @@ def list_test_runs(
     return TestRunListOut(items=items, total=total, page=page, per_page=per_page)  # type: ignore[arg-type]
 
 
-@router.get("/compare")
+@router.get("/compare", operation_id="compare_test_runs")
 def compare_test_runs(
     run1: int = Query(...),
     run2: int = Query(...),
@@ -101,7 +101,7 @@ def compare_test_runs(
     return CompareOut(run1=tr1, run2=tr2)
 
 
-@router.get("/{test_run_id}", response_model=TestRunDetail)
+@router.get("/{test_run_id}", response_model=TestRunDetail, operation_id="get_test_run")
 def get_test_run(test_run_id: int, db: Session = Depends(get_db)):
     """Get test run details including results."""
     test_run = db.get(TestRun, test_run_id)
@@ -110,7 +110,7 @@ def get_test_run(test_run_id: int, db: Session = Depends(get_db)):
     return test_run
 
 
-@router.post("/{test_run_id}/cancel")
+@router.post("/{test_run_id}/cancel", operation_id="cancel_test_run")
 def cancel_run(test_run_id: int, db: Session = Depends(get_db)):
     """Cancel a running or queued test run."""
     test_run = db.get(TestRun, test_run_id)
@@ -127,7 +127,7 @@ def cancel_run(test_run_id: int, db: Session = Depends(get_db)):
     return {"status": "cancelled"}
 
 
-@router.delete("/{test_run_id}")
+@router.delete("/{test_run_id}", operation_id="delete_test_run")
 def delete_test_run(test_run_id: int, db: Session = Depends(get_db)):
     """Delete a completed or cancelled test run."""
     test_run = db.get(TestRun, test_run_id)
@@ -142,7 +142,7 @@ def delete_test_run(test_run_id: int, db: Session = Depends(get_db)):
     return {"status": "deleted"}
 
 
-@router.get("/{test_run_id}/logs")
+@router.get("/{test_run_id}/logs", operation_id="get_test_run_logs")
 def get_test_run_logs(test_run_id: int, db: Session = Depends(get_db)):
     """Get all logs for a test run."""
     test_run = db.get(TestRun, test_run_id)
@@ -151,7 +151,7 @@ def get_test_run_logs(test_run_id: int, db: Session = Depends(get_db)):
     return [{"id": log.id, "timestamp": log.timestamp, "log_line": log.log_line, "level": log.level} for log in test_run.logs]
 
 
-@router.post("/{test_run_id}/review")
+@router.post("/{test_run_id}/review", operation_id="start_ai_review")
 def review_test_run(test_run_id: int, db: Session = Depends(get_db)):
     """Trigger an AI review of the test run using Claude CLI.
 
@@ -225,7 +225,7 @@ def review_test_run(test_run_id: int, db: Session = Depends(get_db)):
     return {"status": "running"}
 
 
-@router.post("/{test_run_id}/rerun", response_model=TestRunOut)
+@router.post("/{test_run_id}/rerun", response_model=TestRunOut, operation_id="rerun_test_run")
 def rerun_test(test_run_id: int, db: Session = Depends(get_db)):
     """Create a new test run cloning all settings from an existing run."""
     original = db.get(TestRun, test_run_id)
