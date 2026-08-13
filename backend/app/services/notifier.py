@@ -38,7 +38,7 @@ Status: {status.upper()}
 Results: {passed}/{total} passed, {failed} failed
 Targets: {target_hosts}
 
-View details at: http://localhost:3000/runs
+View details at: {settings.app_base_url.rstrip('/')}/runs
 """
 
     msg = MIMEMultipart()

@@ -2,6 +2,7 @@
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.database import SessionLocal
+from app.models.test_log import TestLog
 from app.models.test_run import TestRun, TestRunStatus
 
 router = APIRouter()
@@ -26,10 +27,15 @@ async def stream_logs(websocket: WebSocket, test_run_id: int):
                     await websocket.send_json({"type": "error", "message": "Test run not found"})
                     break
 
-                # Send new logs
-                new_logs = [
-                    log for log in test_run.logs if log.id > last_log_id
-                ]
+                # Fetch only the logs added since the last poll. Loading
+                # test_run.logs would pull every row for the run each second,
+                # which grows unbounded over a long test run.
+                new_logs = (
+                    db.query(TestLog)
+                    .filter(TestLog.test_run_id == test_run_id, TestLog.id > last_log_id)
+                    .order_by(TestLog.id)
+                    .all()
+                )
                 for log in new_logs:
                     await websocket.send_json({
                         "type": "log",

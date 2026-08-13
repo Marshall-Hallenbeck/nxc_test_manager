@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # Default repository (owner/name format)
     default_repo: str = "Pennyw0rth/NetExec"
 
+    # Base URL of the web UI, used for links in notification emails.
+    # Defaults to the nginx-published port from docker-compose.yml.
+    app_base_url: str = "http://localhost:9000"
+
     # GitHub Webhooks (disabled by default)
     webhook_enabled: bool = False
     webhook_secret: str = ""

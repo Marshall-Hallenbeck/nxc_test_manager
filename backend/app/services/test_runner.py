@@ -104,10 +104,6 @@ def parse_test_output(output: str) -> dict:
         summary["failed"] = int(match.group(3))
         summary["not_tested"] = int(match.group(4)) if match.group(4) else 0
 
-    # If no emoji-based results but we have a summary, use summary counts
-    if not results and summary["total"] > 0:
-        pass
-
     # Fallback: try pytest-style output
     if not results and summary["total"] == 0:
         pattern = re.compile(r"^(PASSED|FAILED|ERROR|SKIPPED)\s+(.+?)(?:\s+in\s+([\d.]+)s)?$", re.MULTILINE)
@@ -222,8 +218,10 @@ def run_test(db: Session, test_run_id: int, target_password: str | None) -> None
         add_log(db, test_run_id, f"=== Testing against {host} ===")
         output_lines = []
 
-        def log_callback(line: str, _lines=output_lines):
-            _lines.append(line)
+        # Bind the current host's list as a default arg so each iteration's
+        # callback appends to its own buffer rather than the loop variable.
+        def log_callback(line: str, lines=output_lines):
+            lines.append(line)
             add_log(db, test_run_id, line)
 
         try:
