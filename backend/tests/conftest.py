@@ -11,6 +11,19 @@ from app.database import Base, get_db
 from app.main import app
 
 
+def pytest_pycollect_makeitem(collector, name, obj):
+    """Never collect application classes as tests.
+
+    The models and enums are all named Test* (TestRun, TestLog, TestStatus...),
+    so pytest tries to collect any test module that imports one and warns that
+    it cannot, because they define __init__. Returning an empty list here skips
+    them; returning None leaves everything else to pytest's normal rules.
+    """
+    if isinstance(obj, type) and obj.__module__.startswith("app."):
+        return []
+    return None
+
+
 engine = create_engine("sqlite:///./test.db", connect_args={"check_same_thread": False})
 TestSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

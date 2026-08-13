@@ -6,7 +6,7 @@ import logging
 import re
 import tempfile
 from pathlib import Path
-from docker.errors import ImageNotFound, NotFound
+from docker.errors import APIError, ImageNotFound, NotFound
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -20,8 +20,9 @@ DOCKER_IMAGE_NAME = "netexec-test-runner"
 DOCKERFILE_DIR = str(Path(__file__).resolve().parent.parent.parent / "docker" / "test-runner")
 NETEXEC_REPO = "Pennyw0rth/NetExec"
 
-# Cache for poetry.lock hashes to avoid repeated GitHub API calls
-_poetry_lock_cache: dict[str, str] = {}
+# Cache for poetry.lock hashes to avoid repeated GitHub API calls.
+# A None value means the ref has no poetry.lock at all.
+poetry_lock_cache: dict[str, str | None] = {}
 
 
 def get_client() -> docker.DockerClient:
@@ -43,51 +44,65 @@ def ensure_image_built() -> None:
 def get_base_poetry_lock_hash() -> str:
     """Get the hash of poetry.lock from the base image."""
     client = get_client()
-    try:
-        # Run a quick container to cat the base poetry.lock
-        result = client.containers.run(
-            DOCKER_IMAGE_NAME,
-            command="/poetry.lock.base",
-            entrypoint="cat",
-            remove=True,
-            network_mode="none",
-        )
-        return hashlib.sha256(result).hexdigest()[:16]
-    except Exception as e:
-        logger.warning(f"Could not get base poetry.lock hash: {e}")
-        return ""
+    # Run a quick container to cat the base poetry.lock
+    result = client.containers.run(
+        DOCKER_IMAGE_NAME,
+        command="/poetry.lock.base",
+        entrypoint="cat",
+        remove=True,
+        network_mode="none",
+    )
+    return hashlib.sha256(result).hexdigest()[:16]
 
 
-def _repo_hash(repo: str) -> str:
+def repo_hash(repo: str) -> str:
     """Short hash of repo name for image tag namespacing."""
     return hashlib.sha256(repo.encode()).hexdigest()[:8]
+
+
+def branch_tag(branch: str) -> str:
+    """Make a branch name usable inside a Docker image tag.
+
+    Docker tags accept only [A-Za-z0-9_.-], but branch names routinely contain
+    a slash (feature/foo), which makes the tag invalid and fails the build.
+    Replace the invalid characters and append a short hash of the original so
+    two branches that normalise to the same string still get distinct tags.
+    """
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "-", branch)
+    return f"{safe[:80]}-{hashlib.sha256(branch.encode()).hexdigest()[:8]}"
 
 
 def get_poetry_lock_hash(
     pr_number: int | None = None,
     branch: str | None = None,
     repo: str | None = None,
-) -> str:
-    """Fetch poetry.lock from a PR or branch and return its hash."""
+) -> str | None:
+    """Fetch poetry.lock from a PR or branch and return its hash.
+
+    Returns None when the ref genuinely has no poetry.lock (HTTP 404) — that
+    repo simply pins no dependencies, so there is nothing to rebuild. Any other
+    failure (network error, 5xx, rate limit) raises: treating those as "no
+    lockfile" would quietly test against stale dependencies.
+    """
     repo = repo or NETEXEC_REPO
     cache_key = f"{repo}:pr-{pr_number}" if pr_number else f"{repo}:branch-{branch}"
 
-    if cache_key in _poetry_lock_cache:
-        return _poetry_lock_cache[cache_key]
+    if cache_key in poetry_lock_cache:
+        return poetry_lock_cache[cache_key]
 
-    try:
-        ref = f"refs/pull/{pr_number}/head" if pr_number else f"refs/heads/{branch}"
-        url = f"https://raw.githubusercontent.com/{repo}/{ref}/poetry.lock"
-        resp = httpx.get(url, timeout=30, follow_redirects=True)
-        if resp.status_code == 200:
-            hash_val = hashlib.sha256(resp.content).hexdigest()[:16]
-            _poetry_lock_cache[cache_key] = hash_val
-            return hash_val
-    except Exception as e:
-        label = f"PR #{pr_number}" if pr_number else f"branch '{branch}'"
-        logger.warning(f"Could not fetch poetry.lock for {label} in {repo}: {e}")
+    ref = f"refs/pull/{pr_number}/head" if pr_number else f"refs/heads/{branch}"
+    url = f"https://raw.githubusercontent.com/{repo}/{ref}/poetry.lock"
+    resp = httpx.get(url, timeout=30, follow_redirects=True)
 
-    return ""
+    if resp.status_code == 404:
+        poetry_lock_cache[cache_key] = None
+        return None
+
+    resp.raise_for_status()
+
+    hash_val = hashlib.sha256(resp.content).hexdigest()[:16]
+    poetry_lock_cache[cache_key] = hash_val
+    return hash_val
 
 
 def get_source_image_name(
@@ -97,10 +112,10 @@ def get_source_image_name(
 ) -> str:
     """Get the image name for a specific PR or branch."""
     repo = repo or NETEXEC_REPO
-    rh = _repo_hash(repo)
+    rh = repo_hash(repo)
     if pr_number:
         return f"{DOCKER_IMAGE_NAME}:{rh}-pr-{pr_number}"
-    return f"{DOCKER_IMAGE_NAME}:{rh}-branch-{branch}"
+    return f"{DOCKER_IMAGE_NAME}:{rh}-branch-{branch_tag(branch or '')}"
 
 
 def source_image_exists(
@@ -115,6 +130,53 @@ def source_image_exists(
         return True
     except ImageNotFound:
         return False
+
+
+def render_source_dockerfile(
+    repo: str,
+    pr_number: int | None = None,
+    branch: str | None = None,
+) -> str:
+    """Render the Dockerfile used to build a PR/branch-specific test image."""
+    fetch_cmd = (
+        (
+            f"git fetch --depth 1 origin pull/{pr_number}/head:pr-{pr_number} && "
+            f"git checkout -q pr-{pr_number}"
+        )
+        if pr_number
+        else (
+            f"git fetch --depth 1 origin {branch} && "
+            f"git checkout -q FETCH_HEAD"
+        )
+    )
+
+    return f"""
+FROM {DOCKER_IMAGE_NAME}:latest
+
+WORKDIR /netexec
+
+# Fetch and checkout the source
+RUN git init -q && \\
+    git remote add origin https://github.com/{repo}.git && \\
+    {fetch_cmd}
+
+# Install updated dependencies
+# Poetry has a bug where git deps pinned to HEAD can be silently removed during
+# the update phase but not reinstalled (stale metadata check reports "Already installed").
+# Workaround: extract git deps from pyproject.toml and force-reinstall them with pip.
+RUN poetry config virtualenvs.create false && \\
+    poetry install --no-interaction && \\
+    grep -oP 'git\\+https://[^"]+' pyproject.toml | xargs -r pip install --force-reinstall --no-deps
+
+# Verify dependencies by loading every protocol the same way nxc does at runtime.
+# Importing nxc.connection is not enough: protocols are loaded from their .py file
+# by path, and nxc/protocols/<name>/ packages shadow the sibling <name>.py on a
+# plain import, so a missing protocol-level dep (e.g. dploot) slips through.
+RUN python -c "from nxc.loaders.protocolloader import ProtocolLoader; pl = ProtocolLoader(); [pl.load_protocol(p['path']) for p in pl.get_protocols().values()]; print('Dependency check passed')"
+
+# Save poetry.lock as the new base for this image
+RUN cp poetry.lock /poetry.lock.base
+"""
 
 
 def build_source_image(
@@ -132,42 +194,7 @@ def build_source_image(
     if log_callback:
         log_callback(f"Building image for {label} with updated dependencies...")
 
-    fetch_cmd = (
-        (
-            f"git fetch --depth 1 origin pull/{pr_number}/head:pr-{pr_number} && "
-            f"git checkout -q pr-{pr_number}"
-        )
-        if pr_number
-        else (
-            f"git fetch --depth 1 origin {branch} && "
-            f"git checkout -q FETCH_HEAD"
-        )
-    )
-
-    dockerfile_content = f"""
-FROM {DOCKER_IMAGE_NAME}:latest
-
-WORKDIR /netexec
-
-# Fetch and checkout the source
-RUN git init -q && \\
-    git remote add origin https://github.com/{repo}.git && \\
-    {fetch_cmd}
-
-# Install updated dependencies
-# Poetry has a bug where git deps pinned to HEAD can be silently removed during
-# the update phase but not reinstalled (stale metadata check reports "Already installed").
-# Workaround: extract git deps from pyproject.toml and force-reinstall them with pip.
-RUN poetry config virtualenvs.create false && \\
-    poetry install --no-interaction; \\
-    grep -oP 'git\\+https://[^"]+' pyproject.toml | xargs -r pip install --force-reinstall --no-deps
-
-# Verify critical dependencies are installed
-RUN python -c "from nxc.connection import connection; print('Dependency check passed')"
-
-# Save poetry.lock as the new base for this image
-RUN cp poetry.lock /poetry.lock.base
-"""
+    dockerfile_content = render_source_dockerfile(repo, pr_number, branch)
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -224,12 +251,18 @@ def get_image(
             log_callback(f"Using cached image for {label}")
         return get_source_image_name(pr_number=pr_number, repo=repo)
 
-    # Compare poetry.lock hashes
+    # Compare poetry.lock hashes. A failure to READ either side must abort the
+    # run: falling back to the base image on error silently tests the PR against
+    # stale dependencies, which reads as a mass e2e failure rather than a
+    # dependency problem. A ref that genuinely has no poetry.lock is different —
+    # there is nothing to rebuild, so the base image is the right answer.
     base_hash = get_base_poetry_lock_hash()
     source_hash = get_poetry_lock_hash(pr_number=pr_number, branch=branch, repo=repo)
 
-    if not source_hash:
-        logger.warning(f"Could not fetch poetry.lock for {label}, using base image")
+    if source_hash is None:
+        logger.info(f"{label} in {repo} has no poetry.lock, using base image")
+        if log_callback:
+            log_callback(f"No poetry.lock in {repo} - using base image")
         return DOCKER_IMAGE_NAME
 
     if base_hash == source_hash:
@@ -338,7 +371,10 @@ def run_test_container(
     container_id: str = container.id
     logger.info(f"Started container {container_id[:12]} for {label} using {image_name}")
 
-    # Stream logs - buffer chunks and split on actual newlines
+    # Stream logs - buffer chunks and split on actual newlines.
+    # Any failure here propagates: a truncated log stream means the recorded
+    # test output is incomplete, which must not be reported as a result.
+    # The finally block still removes the container so nothing is leaked.
     try:
         buffer = ""
         for chunk in container.logs(stream=True, follow=True):
@@ -358,19 +394,18 @@ def run_test_container(
         # Flush any remaining content
         if buffer.strip() and log_callback:
             log_callback(buffer.strip())
-    except Exception as e:
-        logger.error(f"Error streaming logs: {e}")
 
-    # Wait for completion
-    result = container.wait(timeout=settings.container_timeout)
-    exit_code = result.get("StatusCode", -1)
-
-    # Cleanup
-    try:
-        container.remove(force=True)
-        logger.info(f"Removed container {container_id[:12]}")
-    except Exception as e:
-        logger.warning(f"Failed to remove container {container_id[:12]}: {e}")
+        # Wait for completion
+        result = container.wait(timeout=settings.container_timeout)
+        exit_code = result.get("StatusCode", -1)
+    finally:
+        # Cleanup. A removal failure is logged rather than raised so it cannot
+        # mask an in-flight streaming error.
+        try:
+            container.remove(force=True)
+            logger.info(f"Removed container {container_id[:12]}")
+        except Exception as e:
+            logger.warning(f"Failed to remove container {container_id[:12]}: {e}")
 
     return exit_code, container_id
 
@@ -392,39 +427,48 @@ def stop_container(container_id: str) -> bool:
         return False
 
 
-def cleanup_pr_images(keep_recent: int = 10) -> int:
-    """Remove old PR-specific images, keeping the most recent ones.
+def cleanup_source_images(keep_recent: int | None = None) -> list[str]:
+    """Remove old PR/branch test images, keeping the most recent ones.
 
-    Returns the number of images removed.
+    Returns the tags removed. Nothing is removed when keep_recent is 0.
+
+    Removal uses force=False so Docker refuses (409) to delete an image a
+    container is still using. That is the expected case when runs overlap, so
+    an in-use image is reported and retried on the next cleanup rather than
+    being torn out from under a running test. Note this protects the image,
+    not the tag: if one image ever carried several tags, dropping a spare tag
+    would succeed because the image itself survives. Each PR/branch image is
+    built with exactly one tag, so removing its tag does delete the image.
     """
+    if keep_recent is None:
+        keep_recent = settings.image_cache_size
+    if keep_recent <= 0:
+        logger.info("Image cleanup disabled (image_cache_size=0)")
+        return []
+
     client = get_client()
-    removed = 0
+    latest_tag = f"{DOCKER_IMAGE_NAME}:latest"
 
-    try:
-        # List all source-specific images (PR and branch)
-        images = client.images.list(name=DOCKER_IMAGE_NAME)
-        source_images = []
+    # Collect every source-specific tag, newest first. One image can carry
+    # several tags, so pair each tag with its own image for sorting.
+    tagged = [
+        (img, tag)
+        for img in client.images.list(name=DOCKER_IMAGE_NAME)
+        for tag in img.tags
+        if tag != latest_tag
+    ]
+    tagged.sort(key=lambda pair: pair[0].attrs.get("Created", ""), reverse=True)
 
-        latest_tag = f"{DOCKER_IMAGE_NAME}:latest"
-        for img in images:
-            source_images.extend(
-                (img, tag)
-                for tag in img.tags
-                if ":" in tag and tag != latest_tag
-            )
+    removed = []
+    for _, tag in tagged[keep_recent:]:
+        try:
+            client.images.remove(tag, force=False, noprune=False)
+            logger.info(f"Removed old test image: {tag}")
+            removed.append(tag)
+        except APIError as e:
+            # 409 Conflict: a container still references this image.
+            logger.info(f"Keeping {tag}, still in use ({e})")
 
-        # Sort by creation date (newest first) and remove old ones
-        source_images.sort(key=lambda x: x[0].attrs.get("Created", ""), reverse=True)
-
-        for _, tag in source_images[keep_recent:]:
-            try:
-                client.images.remove(tag, force=True)
-                logger.info(f"Removed old image: {tag}")
-                removed += 1
-            except Exception as e:
-                logger.warning(f"Could not remove {tag}: {e}")
-
-    except Exception as e:
-        logger.error(f"Error during image cleanup: {e}")
-
+    if removed:
+        logger.info(f"Image cleanup removed {len(removed)} of {len(tagged)} test images")
     return removed

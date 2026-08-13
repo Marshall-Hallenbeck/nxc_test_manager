@@ -57,15 +57,6 @@ def get_branch_details(branch: str, repo: str | None = None) -> dict:
     }
 
 
-def validate_pr_exists(pr_number: int, repo: str | None = None) -> bool:
-    """Check if a PR number exists in the given repo."""
-    try:
-        details = get_pr_details(pr_number, repo=repo)
-        return details["state"] in ("open", "closed")
-    except httpx.HTTPStatusError:
-        return False
-
-
 def fetch_open_prs(repo: str | None = None) -> list[dict]:
     """Fetch open PRs from GitHub, with 60s caching per repo."""
     repo = repo or NETEXEC_REPO

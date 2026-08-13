@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     container_memory_limit: str = "2g"
     celery_workers: int = 3
 
+    # How many PR/branch test images to keep on disk. Older ones are removed
+    # after each run. Set to 0 to disable cleanup and keep every image.
+    image_cache_size: int = 10
+
     # Empire C2 (for empire_exec e2e tests)
     empire_host: str = "127.0.0.1"
     empire_port: int = 1337
@@ -35,6 +39,10 @@ class Settings(BaseSettings):
 
     # Default repository (owner/name format)
     default_repo: str = "Pennyw0rth/NetExec"
+
+    # Base URL of the web UI, used for links in notification emails.
+    # Defaults to the nginx-published port from docker-compose.yml.
+    app_base_url: str = "http://localhost:9000"
 
     # GitHub Webhooks (disabled by default)
     webhook_enabled: bool = False
@@ -46,14 +54,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # type: ignore[call-arg]
-
-
-def reload_settings() -> None:
-    """Re-read .env and environment variables into the existing settings object.
-
-    Mutates in-place so all modules that imported `settings` see the update.
-    Infrastructure settings (DATABASE_URL, REDIS_URL) take effect on next restart.
-    """
-    fresh = Settings()  # type: ignore[call-arg]
-    for field_name in Settings.model_fields:
-        setattr(settings, field_name, getattr(fresh, field_name))

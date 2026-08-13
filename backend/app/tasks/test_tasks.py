@@ -1,7 +1,6 @@
 """Celery tasks for test execution."""
 import logging
 from . import celery_app
-from app.config import reload_settings
 from app.database import SessionLocal
 from app.models.test_run import TestRun, TestRunStatus
 from app.services import test_runner, notifier, docker_manager
@@ -23,7 +22,6 @@ def run_pr_test(
     """
     db = SessionLocal()
     try:
-        reload_settings()
         # Store celery task ID for cancellation
         test_run = db.get(TestRun, test_run_id)
         if not test_run:
@@ -50,6 +48,9 @@ def run_pr_test(
                 total=test_run.total_tests or 0,
                 target_hosts=test_run.target_hosts,
             )
+
+        # Trim the test-image cache now that this run is done with its image.
+        docker_manager.cleanup_source_images()
     except Exception as e:
         logger.error(f"Task failed for TestRun {test_run_id}: {e}")
         try:
