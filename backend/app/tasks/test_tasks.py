@@ -48,6 +48,9 @@ def run_pr_test(
                 total=test_run.total_tests or 0,
                 target_hosts=test_run.target_hosts,
             )
+
+        # Trim the test-image cache now that this run is done with its image.
+        docker_manager.cleanup_source_images()
     except Exception as e:
         logger.error(f"Task failed for TestRun {test_run_id}: {e}")
         try:

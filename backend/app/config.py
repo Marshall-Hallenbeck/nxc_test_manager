@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     container_memory_limit: str = "2g"
     celery_workers: int = 3
 
+    # How many PR/branch test images to keep on disk. Older ones are removed
+    # after each run. Set to 0 to disable cleanup and keep every image.
+    image_cache_size: int = 10
+
     # Empire C2 (for empire_exec e2e tests)
     empire_host: str = "127.0.0.1"
     empire_port: int = 1337
