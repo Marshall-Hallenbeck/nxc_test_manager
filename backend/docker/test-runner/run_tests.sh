@@ -58,9 +58,12 @@ else
     exit 1
 fi
 
-# Verify critical dependencies are importable before running tests
+# Verify dependencies by loading every protocol the same way nxc does at runtime.
+# Importing nxc.connection is not enough: protocols are loaded from their .py file
+# by path, and nxc/protocols/<name>/ packages shadow the sibling <name>.py on a
+# plain import, so a missing protocol-level dep (e.g. dploot) slips through.
 echo "=== Verifying dependencies ==="
-python -c "from nxc.connection import connection" 2>&1 || {
+python -c "from nxc.loaders.protocolloader import ProtocolLoader; pl = ProtocolLoader(); [pl.load_protocol(p['path']) for p in pl.get_protocols().values()]" 2>&1 || {
     echo "FATAL: Dependency verification failed. Cannot run tests."
     exit 1
 }
@@ -115,51 +118,64 @@ fi
 
 echo "=== Running e2e tests against ${TARGET_HOST} ==="
 
-# Build command with optional flags
-CMD="python tests/e2e_tests.py -t \"${TARGET_HOST}\" -u \"${TARGET_USERNAME}\" -p \"${TARGET_PASSWORD}\""
+# Build the command as an argument array. Never build a string and eval it: the
+# target host/username/password come from the web UI unvalidated, so a value
+# containing shell metacharacters would otherwise be re-parsed and executed.
+CMD=(python tests/e2e_tests.py -t "$TARGET_HOST" -u "$TARGET_USERNAME" -p "$TARGET_PASSWORD")
+# Mirror of CMD used only for logging, with the password redacted. The log
+# stream is persisted to the database and rendered in the web UI, so the real
+# password must never reach it.
+CMD_LOG=(python tests/e2e_tests.py -t "$TARGET_HOST" -u "$TARGET_USERNAME" -p '******')
+
+add_arg() {
+    CMD+=("$@")
+    CMD_LOG+=("$@")
+}
 
 # Add protocols if specified
 if [ -n "$PROTOCOLS" ]; then
-    # Convert comma-separated to space-separated for --protocols
-    PROTO_ARGS=$(echo "$PROTOCOLS" | tr ',' ' ')
-    CMD="$CMD --protocols $PROTO_ARGS"
+    # Convert comma-separated to one array element per protocol
+    IFS=',' read -ra PROTO_ARGS <<< "$PROTOCOLS"
+    add_arg --protocols "${PROTO_ARGS[@]}"
 fi
 
 # Add optional flags
 if [ -n "$USE_KERBEROS" ]; then
-    CMD="$CMD -k"
+    add_arg -k
 fi
 
 if [ -n "$VERBOSE" ]; then
-    CMD="$CMD -v"
+    add_arg -v
 fi
 
 if [ -n "$SHOW_ERRORS" ]; then
-    CMD="$CMD -e"
+    add_arg -e
 fi
 
 if [ -n "$LINE_NUMS" ]; then
-    # Convert comma-separated to space-separated for --line-nums
-    LINES_ARGS=$(echo "$LINE_NUMS" | tr ',' ' ')
-    CMD="$CMD --line-nums $LINES_ARGS"
+    # Convert comma-separated to one array element per line number/range
+    IFS=',' read -ra LINES_ARGS <<< "$LINE_NUMS"
+    add_arg --line-nums "${LINES_ARGS[@]}"
 fi
 
 if [ -n "$NOT_TESTED" ]; then
-    CMD="$CMD --not-tested"
+    add_arg --not-tested
 fi
 
 if [ -n "$DNS_SERVER" ]; then
-    CMD="$CMD --dns-server $DNS_SERVER"
+    add_arg --dns-server "$DNS_SERVER"
 fi
 
-echo "Executing: $CMD"
+echo "Executing: ${CMD_LOG[*]}"
 
-# Use timeout to prevent infinite hangs (default: 1800s = 30 minutes)
+# Use timeout to prevent infinite hangs (default: 1800s = 30 minutes).
+# Capture the status with `|| EXIT_CODE=$?` so `set -e` does not abort the
+# script here and skip the timeout report below.
 TIMEOUT=${CONTAINER_TIMEOUT:-1800}
-eval timeout --signal=TERM --kill-after=30 "$TIMEOUT" $CMD
-EXIT_CODE=$?
+EXIT_CODE=0
+timeout --signal=TERM --kill-after=30 "$TIMEOUT" "${CMD[@]}" || EXIT_CODE=$?
 
-if [ $EXIT_CODE -eq 124 ]; then
+if [ "$EXIT_CODE" -eq 124 ]; then
     echo "ERROR: Test execution timed out after ${TIMEOUT} seconds"
 fi
 
