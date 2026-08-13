@@ -51,8 +51,15 @@ docker compose up -d --build frontend               # npm deps
 
 # Code changes: backend auto-reloads (uvicorn --reload), frontend auto-reloads (next dev)
 # Celery worker needs: docker compose restart celery-worker
-# .env changes: celery-worker picks up automatically (per-task reload), backend/frontend need restart
+# .env changes: services must be RECREATED, not restarted:
+docker compose up -d backend celery-worker              # recreates on a changed value
+docker compose up -d --force-recreate backend celery-worker  # if in doubt
 ```
+
+**`docker compose restart` will NOT apply an `.env` edit** — it reuses the existing
+container along with the environment Compose baked in at creation from
+`env_file: ./backend/.env`. Use `up -d`, which detects a changed *value* and recreates
+the container; a comment-only edit is correctly treated as no change.
 
 ### Local (without Docker)
 ```bash
@@ -141,7 +148,7 @@ frontend/
 - `POST /{id}/cancel` — Cancel queued/running run
 - `POST /{id}/rerun` — Clone a run with same settings (password stays server-side)
 - `DELETE /{id}` — Delete completed/cancelled run
-- `GET /{id}/logs` — Fetch log entries (query: after timestamp)
+- `GET /{id}/logs` — Fetch all log entries for a run (no query params)
 - `GET /compare` — Compare two runs (query: run1, run2)
 
 ### WebSocket
@@ -197,14 +204,26 @@ Supports flexible target specification:
 
 ### Docker Networking
 - Backend/celery-worker reach Empire via Docker DNS: `EMPIRE_HOST=empire` (set in docker-compose.yml)
-- Ephemeral test containers use `--network host`, so they reach Empire at `127.0.0.1:1337` (hardcoded in `docker_manager.py:318`)
+- Ephemeral test containers use `--network host`, so they reach Empire at `127.0.0.1:1337` (hardcoded in the `EMPIRE_HOST`/`EMPIRE_PORT` env dict in `docker_manager.py:run_test_container`)
 - These are two different network contexts — don't unify them
 
 ### Settings & Configuration
-- `config.py:settings` is a singleton — all modules import the same object
-- `reload_settings()` mutates it in-place (called at start of each Celery task)
-- Infrastructure settings (DATABASE_URL, REDIS_URL) require container restart
-- Application settings (targets, tokens, Empire, SMTP) reload per-task via `.env`
+- `config.py:settings` is a singleton read once at import — all modules share it
+- Config reaches containers exactly one way: `env_file: ./backend/.env` in
+  `docker-compose.yml`, which Compose expands into container environment variables
+  **at container creation**
+- **Every `.env` change therefore requires recreating the container** — a
+  `docker compose restart` reuses the existing container and its environment, so the
+  edit is silently ignored:
+  ```bash
+  docker compose up -d backend celery-worker   # recreates when a value changed
+  ```
+- Symptom to recognize: an updated credential in `.env` still failing with the old
+  value's error (e.g. GitHub 401) after a `docker compose restart`
+- There is deliberately no runtime reload. A previous `reload_settings()` +
+  `./backend/.env:/app/.env` mount could never work: pydantic-settings ranks
+  environment variables above the `.env` file, so the start-time env var always
+  shadowed the re-read file. Both were removed rather than left as a trap.
 
 ### Quality Gate Notes
 - `ruff check`: run from `backend/` directory (config is in `pyproject.toml`)
