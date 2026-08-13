@@ -26,10 +26,15 @@ async def github_webhook(request: Request):
     if not settings.webhook_enabled:
         raise HTTPException(status_code=404, detail="Webhooks disabled")
 
-    # Verify signature
+    # Verify signature. The secret is mandatory whenever webhooks are enabled —
+    # without it this endpoint would let any unauthenticated caller queue runs.
+    if not settings.webhook_secret:
+        logger.error("WEBHOOK_ENABLED is set but WEBHOOK_SECRET is empty — refusing to process webhooks")
+        raise HTTPException(status_code=500, detail="Webhook secret not configured")
+
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256", "")
-    if settings.webhook_secret and not verify_signature(body, signature, settings.webhook_secret):
+    if not verify_signature(body, signature, settings.webhook_secret):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
     event = request.headers.get("X-GitHub-Event", "")
